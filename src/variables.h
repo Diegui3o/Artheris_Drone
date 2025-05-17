@@ -157,6 +157,7 @@ struct Kalman
 
 extern Kalman kalmanRoll;
 extern Kalman kalmanPitch;
+extern Kalman kalmanYaw;
 
 // Estados
 extern float z;          // Altitud medida [m]

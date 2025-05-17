@@ -10,10 +10,12 @@
 #include "manual_mode.h"
 #include <esp_task_wdt.h>
 
+SemaphoreHandle_t sensorMutex = NULL;
+
 // ================= CONFIGURACIÓN =================
 const char *ssid = "FAMILIAMYM";
 const char *password = "mm221418";
-const char *websocket_server = "192.168.1.56"; // IP de tu servidor Node.js
+const char *websocket_server = "192.168.1.64"; // IP de tu servidor Node.js
 const int websocket_port = 3002;               // Puerto debe coincidir con el servidor
 const char *websocket_path = "/esp32";
 
@@ -78,6 +80,7 @@ bool setup_wifi()
     }
 
     Serial.println("\n✅ WiFi conectado. IP: " + WiFi.localIP().toString());
+    setupMotores();
     return true;
 }
 
@@ -193,11 +196,7 @@ void TaskControlCode(void *pvParameters)
     for (;;)
     {
         esp_task_wdt_reset();
-
         digitalWrite(pinLed, ledState ? HIGH : LOW);
-        motorState ? encenderMotores(1500) : apagarMotores();
-
-        // Ejecutar setup solo si el modo cambió
         if (modoActual != lastMode)
         {
             lastMode = modoActual;
@@ -209,18 +208,18 @@ void TaskControlCode(void *pvParameters)
                 break;
             case 2: // Modo manual
                 Serial.println("Modo manual activado");
+                channelInterrupHandler();
                 setup_manual_mode();
                 break;
             case 1: // Modo espera
                 Serial.println("Modo espera activado");
-                // Aquí puedes agregar cualquier configuración específica para el modo espera
+                apagarMotores();
                 break;
             default:
                 // No hacer nada especial
                 break;
             }
         }
-
         // Ejecutar loop solo si el modo es piloto o manual
         if (modoActual == 0 || modoActual == 2)
         {
@@ -228,15 +227,17 @@ void TaskControlCode(void *pvParameters)
             float dt = (micros() - last_time) / 1e6;
             if (dt >= 0.002)
             {
-                if (modoActual == 0)
-                    loop_pilote_mode(dt);
-                else if (modoActual == 2)
-                    loop_manual_mode(dt);
+                if (xSemaphoreTake(sensorMutex, portMAX_DELAY) == pdTRUE)
+                {
+                    if (modoActual == 0)
+                        loop_pilote_mode(dt);
+                    else if (modoActual == 2)
+                        loop_manual_mode(dt);
+                    xSemaphoreGive(sensorMutex);
+                }
                 last_time = micros();
             }
         }
-        // Si modoActual == 1, no se ejecuta ningún loop
-
         vTaskDelay(1 / portTICK_PERIOD_MS);
     }
 }
@@ -258,9 +259,13 @@ void TaskComunicacionCode(void *pvParameters)
             connectToWebSocket();
         }
 
-        // Lectura de sensores
-        gyro_signals();
-        loop_yaw();
+        // Lectura de sensores protegida por mutex
+        if (xSemaphoreTake(sensorMutex, portMAX_DELAY) == pdTRUE)
+        {
+            gyro_signals();
+            loop_yaw();
+            xSemaphoreGive(sensorMutex);
+        }
 
         // Envío periódico de datos
         unsigned long currentTime = millis();
@@ -342,7 +347,8 @@ void setup()
     digitalWrite(pinLed, HIGH); // Indicador de inicio
 
     preferences.begin("dronData", false);
-    modoActual = preferences.getInt("modo", 1);
+    modoActual = 1;                         // Siempre iniciar en modo espera
+    preferences.putInt("modo", modoActual); // Guardar modo espera en la memoria
     ledState = preferences.getBool("ledState", false);
 
     setCpuFrequencyMhz(160);
@@ -358,25 +364,28 @@ void setup()
     btStop();
     connectToWebSocket();
 
-    esp_task_wdt_init(10, true);
+    esp_task_wdt_init(20, true); // Aumentar tiempo del watchdog a 20 segundos
+
+    // Crear el mutex antes de iniciar las tareas
+    sensorMutex = xSemaphoreCreateMutex();
 
     xTaskCreatePinnedToCore(
         TaskControlCode,
         "TaskControl",
         10000,
         NULL,
-        2,
+        2, // Prioridad más alta para el control
         &TaskControl,
-        0);
+        0); // Núcleo 0 para control en tiempo real
 
     xTaskCreatePinnedToCore(
         TaskComunicacionCode,
         "TaskComunicacion",
         10000,
         NULL,
-        1,
+        1, // Prioridad menor para comunicación
         &TaskComunicacion,
-        1);
+        1); // Núcleo 1 para comunicación
 
     digitalWrite(pinLed, LOW);
     Serial.println("✅ Sistema inicializado correctamente");
@@ -384,5 +393,4 @@ void setup()
 
 void loop()
 {
-    delay(10); // El loop principal está vacío
 }

@@ -92,8 +92,8 @@ void gyro_signals(void)
   AccY -= AccYCalibration;
   AccZ -= AccZCalibration;
 
-  AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 1 / (3.142 / 180);
-  AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 1 / (3.142 / 180);
+  AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 1 / (3.142 / 180) + 1.82;
+  AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 1 / (3.142 / 180) - 5.35;
 
   // Cálculo del ángulo estimado a partir del acelerómetro (usando atan2 puede ser más robusto)
   accAngleRoll = atan2(AccY, sqrt(AccX * AccX + AccZ * AccZ)) * 180.0 / PI;
@@ -104,8 +104,8 @@ void gyro_signals(void)
   float gyroRatePitch_local = gyroRatePitch;
 
   // Actualización del filtro de Kalman para cada eje
-  AngleRoll = Kalman_filter(kalmanRoll, accAngleRoll, gyroRateRoll_local, dt);
-  AnglePitch = Kalman_filter(kalmanPitch, accAnglePitch, gyroRatePitch_local, dt);
+  AngleRoll = Kalman_filter(kalmanRoll, AngleRoll_est, gyroRateRoll_local, dt);
+  AnglePitch = Kalman_filter(kalmanPitch, AnglePitch_est, gyroRatePitch_local, dt);
 }
 
 void loop_yaw()
@@ -115,15 +115,6 @@ void loop_yaw()
   int y = compass.getY();
   int z = compass.getZ();
 
-  // Check if the compass is responding
-  if (x == 0 && y == 0 && z == 0)
-  {
-    Serial.println("Compass not responding. Reinitializing...");
-    compass.init();
-    compass.setMode(0x01, 0x0C, 0x10, 0x00); // Continuous mode, 10Hz, 8G range
-    return;                                  // Skip the rest of the loop to allow reinitialization
-  }
-
   int heading = compass.getAzimuth();
   int yaw = heading - yawOffset;
 
@@ -132,13 +123,15 @@ void loop_yaw()
   if (yaw < -180)
     yaw += 360;
 
-  AngleYaw = yaw;
+  float alpha = 0.84; // Ajusta entre 0.95 y 0.99 según tu preferencia
+  AngleYaw = alpha * (yaw + RateYaw * dt) + (1 - alpha) * AngleYaw;
+  AngleYaw = yaw + 1;
 }
 
 void setupMPU()
 {
   Serial.begin(115200);
-  Wire.begin();
+  Wire.begin(SDA_MPU, SCL_MPU, 100000); // 100kHz
 
   // Initialize the compass
   compass.init();
@@ -147,6 +140,7 @@ void setupMPU()
 
   // Initialize the MPU6050
   accelgyro.initialize();
+  calibrateSensors();
   if (!accelgyro.testConnection())
   {
     Serial.println("Error: No se pudo conectar con el MPU6050.");
@@ -164,4 +158,116 @@ void setupMPU()
   Serial.print("Calibrado. Dirección inicial = ");
   Serial.print(yawOffset);
   Serial.println("° (ahora es yaw = 0°)");
+}
+
+// === CALIBRACIÓN DEL MPU6050 ===
+void calibrateSensors()
+{
+  Serial.println("\nCalibrando sensores...");
+  digitalWrite(pinLed, HIGH);
+
+  accelgyro.setXAccelOffset(0);
+  accelgyro.setYAccelOffset(0);
+  accelgyro.setZAccelOffset(0);
+  accelgyro.setXGyroOffset(0);
+  accelgyro.setYGyroOffset(0);
+  accelgyro.setZGyroOffset(0);
+
+  meansensors();
+  Serial.println("\nCalculando offsets...");
+  calibration();
+
+  accelgyro.setXAccelOffset(ax_offset);
+  accelgyro.setYAccelOffset(ay_offset);
+  accelgyro.setZAccelOffset(az_offset);
+  accelgyro.setXGyroOffset(gx_offset);
+  accelgyro.setYGyroOffset(gy_offset);
+  accelgyro.setZGyroOffset(gz_offset);
+
+  Serial.println("Calibración completada.");
+  digitalWrite(pinLed, LOW);
+}
+
+void meansensors()
+{
+  long i = 0, buff_ax = 0, buff_ay = 0, buff_az = 0, buff_gx = 0, buff_gy = 0, buff_gz = 0;
+  while (i < (buffersize + 101))
+  {
+    accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    if (i > 100 && i <= (buffersize + 100))
+    {
+      buff_ax += ax;
+      buff_ay += ay;
+      buff_az += az;
+      buff_gx += gx;
+      buff_gy += gy;
+      buff_gz += gz;
+    }
+    i++;
+    delay(2);
+  }
+
+  mean_ax = buff_ax / buffersize;
+  mean_ay = buff_ay / buffersize;
+  mean_az = buff_az / buffersize;
+  mean_gx = buff_gx / buffersize;
+  mean_gy = buff_gy / buffersize;
+  mean_gz = buff_gz / buffersize;
+}
+
+void calibration()
+{
+  ax_offset = -mean_ax / 8;
+  ay_offset = -mean_ay / 8;
+  az_offset = (16384 - mean_az) / 8;
+
+  gx_offset = -mean_gx / 4;
+  gy_offset = -mean_gy / 4;
+  gz_offset = -mean_gz / 4;
+
+  while (1)
+  {
+    int ready = 0;
+    accelgyro.setXAccelOffset(ax_offset);
+    accelgyro.setYAccelOffset(ay_offset);
+    accelgyro.setZAccelOffset(az_offset);
+    accelgyro.setXGyroOffset(gx_offset);
+    accelgyro.setYGyroOffset(gy_offset);
+    accelgyro.setZGyroOffset(gz_offset);
+
+    meansensors();
+
+    if (abs(mean_ax) <= acel_deadzone)
+      ready++;
+    else
+      ax_offset -= mean_ax / acel_deadzone;
+
+    if (abs(mean_ay) <= acel_deadzone)
+      ready++;
+    else
+      ay_offset -= mean_ay / acel_deadzone;
+
+    if (abs(16384 - mean_az) <= acel_deadzone)
+      ready++;
+    else
+      az_offset += (16384 - mean_az) / acel_deadzone;
+
+    if (abs(mean_gx) <= giro_deadzone)
+      ready++;
+    else
+      gx_offset -= mean_gx / (giro_deadzone + 1);
+
+    if (abs(mean_gy) <= giro_deadzone)
+      ready++;
+    else
+      gy_offset -= mean_gy / (giro_deadzone + 1);
+
+    if (abs(mean_gz) <= giro_deadzone)
+      ready++;
+    else
+      gz_offset -= mean_gz / (giro_deadzone + 1);
+
+    if (ready == 6)
+      break;
+  }
 }

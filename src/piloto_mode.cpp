@@ -9,9 +9,6 @@
 #include "mpu.h"
 #include "motores.h"
 
-// Define T as a global variable
-float T = 0.0;
-
 // Variable to track MPU calibration status
 bool mpu_ready = false;
 
@@ -40,9 +37,10 @@ void setup_pilote_mode()
     Serial.println("Setup completado.");
 }
 
-// === LOOP CON CONTROL LQR ===
 void loop_pilote_mode(float dt)
 {
+    InputThrottle = 1500;
+
     // Estado del sistema
     float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
     float x_i[3] = {integral_phi, integral_theta, integral_psi};
@@ -54,126 +52,69 @@ void loop_pilote_mode(float dt)
 
     error_phi = phi_ref - x_c[0];
     error_theta = theta_ref - x_c[1];
-    error_psi = psi_ref - 0;
+    error_psi = psi_ref - x_c[2];
+
+    phi_ref = DesiredAngleRoll / 2.5;
+    theta_ref = DesiredAnglePitch / 2.5;
+    psi_ref = DesiredRateYaw / 2.5;
 
     // Actualizar integrales
     x_i[0] += error_phi * dt;
     x_i[1] += error_theta * dt;
     x_i[2] += error_psi * dt;
 
-    InputThrottle = 1500; // Empuje total calculado por el controlador de altitud
-
-    applyControl(tau_x, tau_y, tau_z);
-}
-
-// === CALIBRACIÓN DEL MPU6050 ===
-void calibrateSensors()
-{
-    Serial.println("\nCalibrando sensores...");
-    digitalWrite(pinLed, HIGH);
-
-    accelgyro.setXAccelOffset(0);
-    accelgyro.setYAccelOffset(0);
-    accelgyro.setZAccelOffset(0);
-    accelgyro.setXGyroOffset(0);
-    accelgyro.setYGyroOffset(0);
-    accelgyro.setZGyroOffset(0);
-
-    meansensors();
-    Serial.println("\nCalculando offsets...");
-    calibration();
-
-    accelgyro.setXAccelOffset(ax_offset);
-    accelgyro.setYAccelOffset(ay_offset);
-    accelgyro.setZAccelOffset(az_offset);
-    accelgyro.setXGyroOffset(gx_offset);
-    accelgyro.setYGyroOffset(gy_offset);
-    accelgyro.setZGyroOffset(gz_offset);
-
-    Serial.println("Calibración completada.");
-    digitalWrite(pinLed, LOW);
-}
-
-void meansensors()
-{
-    long i = 0, buff_ax = 0, buff_ay = 0, buff_az = 0, buff_gx = 0, buff_gy = 0, buff_gz = 0;
-    while (i < (buffersize + 101))
+    if (InputThrottle > 1020)
     {
-        accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-        if (i > 100 && i <= (buffersize + 100))
-        {
-            buff_ax += ax;
-            buff_ay += ay;
-            buff_az += az;
-            buff_gx += gx;
-            buff_gy += gy;
-            buff_gz += gz;
-        }
-        i++;
-        delay(2);
+        applyControl(tau_x, tau_y, tau_z);
+    }
+    else
+    {
+        applyControl(0, 0, 0);
+        apagarMotores();
+    }
+    if (MotorInput1 > 2000)
+    {
+        MotorInput1 = 1999;
     }
 
-    mean_ax = buff_ax / buffersize;
-    mean_ay = buff_ay / buffersize;
-    mean_az = buff_az / buffersize;
-    mean_gx = buff_gx / buffersize;
-    mean_gy = buff_gy / buffersize;
-    mean_gz = buff_gz / buffersize;
-}
-
-void calibration()
-{
-    ax_offset = -mean_ax / 8;
-    ay_offset = -mean_ay / 8;
-    az_offset = (16384 - mean_az) / 8;
-
-    gx_offset = -mean_gx / 4;
-    gy_offset = -mean_gy / 4;
-    gz_offset = -mean_gz / 4;
-
-    while (1)
+    if (MotorInput2 > 2000)
     {
-        int ready = 0;
-        accelgyro.setXAccelOffset(ax_offset);
-        accelgyro.setYAccelOffset(ay_offset);
-        accelgyro.setZAccelOffset(az_offset);
-        accelgyro.setXGyroOffset(gx_offset);
-        accelgyro.setYGyroOffset(gy_offset);
-        accelgyro.setZGyroOffset(gz_offset);
+        MotorInput2 = 1999;
+    }
 
-        meansensors();
+    if (MotorInput3 > 2000)
+    {
+        MotorInput3 = 1999;
+    }
 
-        if (abs(mean_ax) <= acel_deadzone)
-            ready++;
-        else
-            ax_offset -= mean_ax / acel_deadzone;
+    if (MotorInput4 > 2000)
+    {
+        MotorInput4 = 1999;
+    }
 
-        if (abs(mean_ay) <= acel_deadzone)
-            ready++;
-        else
-            ay_offset -= mean_ay / acel_deadzone;
+    if (MotorInput1 < ThrottleIdle)
+    {
+        MotorInput1 = ThrottleIdle;
+    }
+    if (MotorInput2 < ThrottleIdle)
+    {
+        MotorInput2 = ThrottleIdle;
+    }
+    if (MotorInput3 < ThrottleIdle)
+    {
+        MotorInput3 = ThrottleIdle;
+    }
+    if (MotorInput4 < ThrottleIdle)
+    {
+        MotorInput4 = ThrottleIdle;
+    }
 
-        if (abs(16384 - mean_az) <= acel_deadzone)
-            ready++;
-        else
-            az_offset += (16384 - mean_az) / acel_deadzone;
+    if (ReceiverValue[2] < 1030) // dont Arm the motors
+    {
 
-        if (abs(mean_gx) <= giro_deadzone)
-            ready++;
-        else
-            gx_offset -= mean_gx / (giro_deadzone + 1);
-
-        if (abs(mean_gy) <= giro_deadzone)
-            ready++;
-        else
-            gy_offset -= mean_gy / (giro_deadzone + 1);
-
-        if (abs(mean_gz) <= giro_deadzone)
-            ready++;
-        else
-            gz_offset -= mean_gz / (giro_deadzone + 1);
-
-        if (ready == 6)
-            break;
+        MotorInput1 = ThrottleCutOff;
+        MotorInput2 = ThrottleCutOff;
+        MotorInput3 = ThrottleCutOff;
+        MotorInput4 = ThrottleCutOff;
     }
 }

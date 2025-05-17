@@ -10,14 +10,14 @@
 
 // === Matrices LQR ===
 const float Ki_at[3][3] = {
-    {10.00, 0, 0},
-    {0, 10.00, 0},
-    {0, 0, 3.162}};
+    {0.90, 0, 0},
+    {0, 0.90, 0},
+    {0, 0, 0.162}};
 
 const float Kc_at[3][6] = {
-    {6.4879, 0, 0, 3.209, 0, 0},
-    {0, 6.4959, 0, 0, 3.219, 0},
-    {0, 0, 2.97864, 0, 0, 1.00}};
+    {5.98, 0, 0, 3.57, 0, 0},
+    {0, 5.99, 0, 0, 3.58, 0},
+    {0, 0, 3.6, 0, 0, 1.60}};
 
 void channelInterrupHandler()
 {
@@ -144,18 +144,22 @@ void loop_manual_mode(float dt)
   // Control LQR
   tau_x = Ki_at[0][0] * x_i[0] + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
   tau_y = Ki_at[1][1] * x_i[1] + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
-  tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi - Kc_at[2][5] * x_c[5] - 1;
+  tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi - Kc_at[2][5] * x_c[5];
 
   error_phi = phi_ref - x_c[0];
   error_theta = theta_ref - x_c[1];
-  error_psi = 0;
+  error_psi = psi_ref - x_c[2];
+
+  phi_ref = DesiredAngleRoll / 2.5;
+  theta_ref = DesiredAnglePitch / 2.5;
+  psi_ref = DesiredRateYaw / 2.5;
 
   // Actualizar integrales
   x_i[0] += error_phi * dt;
   x_i[1] += error_theta * dt;
   x_i[2] += error_psi * dt;
 
-  if (InputThrottle > 1050)
+  if (InputThrottle > 1020)
   {
     applyControl(tau_x, tau_y, tau_z);
   }
@@ -163,5 +167,50 @@ void loop_manual_mode(float dt)
   {
     applyControl(0, 0, 0);
     apagarMotores();
+  }
+  if (MotorInput1 > 2000)
+  {
+    MotorInput1 = 1999;
+  }
+
+  if (MotorInput2 > 2000)
+  {
+    MotorInput2 = 1999;
+  }
+
+  if (MotorInput3 > 2000)
+  {
+    MotorInput3 = 1999;
+  }
+
+  if (MotorInput4 > 2000)
+  {
+    MotorInput4 = 1999;
+  }
+
+  if (MotorInput1 < ThrottleIdle)
+  {
+    MotorInput1 = ThrottleIdle;
+  }
+  if (MotorInput2 < ThrottleIdle)
+  {
+    MotorInput2 = ThrottleIdle;
+  }
+  if (MotorInput3 < ThrottleIdle)
+  {
+    MotorInput3 = ThrottleIdle;
+  }
+  if (MotorInput4 < ThrottleIdle)
+  {
+    MotorInput4 = ThrottleIdle;
+  }
+
+  if (ReceiverValue[2] < 1030) // dont Arm the motors
+  {
+
+    MotorInput1 = ThrottleCutOff;
+    MotorInput2 = ThrottleCutOff;
+    MotorInput3 = ThrottleCutOff;
+    MotorInput4 = ThrottleCutOff;
   }
 }
