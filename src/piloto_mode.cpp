@@ -72,49 +72,4 @@ void loop_pilote_mode(float dt)
         applyControl(0, 0, 0);
         apagarMotores();
     }
-    if (MotorInput1 > 2000)
-    {
-        MotorInput1 = 1999;
-    }
-
-    if (MotorInput2 > 2000)
-    {
-        MotorInput2 = 1999;
-    }
-
-    if (MotorInput3 > 2000)
-    {
-        MotorInput3 = 1999;
-    }
-
-    if (MotorInput4 > 2000)
-    {
-        MotorInput4 = 1999;
-    }
-
-    if (MotorInput1 < ThrottleIdle)
-    {
-        MotorInput1 = ThrottleIdle;
-    }
-    if (MotorInput2 < ThrottleIdle)
-    {
-        MotorInput2 = ThrottleIdle;
-    }
-    if (MotorInput3 < ThrottleIdle)
-    {
-        MotorInput3 = ThrottleIdle;
-    }
-    if (MotorInput4 < ThrottleIdle)
-    {
-        MotorInput4 = ThrottleIdle;
-    }
-
-    if (ReceiverValue[2] < 1030) // dont Arm the motors
-    {
-
-        MotorInput1 = ThrottleCutOff;
-        MotorInput2 = ThrottleCutOff;
-        MotorInput3 = ThrottleCutOff;
-        MotorInput4 = ThrottleCutOff;
-    }
 }

@@ -82,7 +82,7 @@ void gyro_signals(void)
 
   gyroRateRoll = GyroX / 131.0;
   gyroRatePitch = GyroY / 131.0;
-  RateYaw = GyroZ / 131.0;
+  RateYaw = GyroZ / 131.0 + 1;
 
   AccX = (float)AccXLSB / 16384;
   AccY = (float)AccYLSB / 16384;
@@ -115,17 +115,27 @@ void loop_yaw()
   int y = compass.getY();
   int z = compass.getZ();
 
-  int heading = compass.getAzimuth();
-  int yaw = heading - yawOffset;
+  // Compensación de inclinación (tilt compensation)
+  // Usa los ángulos actuales de roll y pitch en radianes
+  float roll_rad = AngleRoll * PI / 180.0;
+  float pitch_rad = AnglePitch * PI / 180.0;
 
+  // Aplica la compensación estándar
+  float Xh = x * cos(pitch_rad) + z * sin(pitch_rad);
+  float Yh = x * sin(roll_rad) * sin(pitch_rad) + y * cos(roll_rad) - z * sin(roll_rad) * cos(pitch_rad);
+
+  float heading = atan2(Yh, Xh) * 180.0 / PI;
+  if (heading < 0)
+    heading += 360;
+
+  int yaw = heading - yawOffset;
   if (yaw > 180)
     yaw -= 360;
   if (yaw < -180)
     yaw += 360;
 
-  float alpha = 0.84; // Ajusta entre 0.95 y 0.99 según tu preferencia
+  float alpha = 0.90; // Ajusta entre 0.95 y 0.99 según tu preferencia
   AngleYaw = alpha * (yaw + RateYaw * dt) + (1 - alpha) * AngleYaw;
-  AngleYaw = yaw + 1;
 }
 
 void setupMPU()
@@ -140,7 +150,7 @@ void setupMPU()
 
   // Initialize the MPU6050
   accelgyro.initialize();
-  calibrateSensors();
+  // calibrateSensors();
   if (!accelgyro.testConnection())
   {
     Serial.println("Error: No se pudo conectar con el MPU6050.");
@@ -164,7 +174,6 @@ void setupMPU()
 void calibrateSensors()
 {
   Serial.println("\nCalibrando sensores...");
-  digitalWrite(pinLed, HIGH);
 
   accelgyro.setXAccelOffset(0);
   accelgyro.setYAccelOffset(0);
@@ -185,7 +194,6 @@ void calibrateSensors()
   accelgyro.setZGyroOffset(gz_offset);
 
   Serial.println("Calibración completada.");
-  digitalWrite(pinLed, LOW);
 }
 
 void meansensors()

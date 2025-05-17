@@ -40,7 +40,7 @@ WebSocketsClient webSocket;
 unsigned long lastConnectionAttempt = 0;
 const long connectionInterval = 5000; // Intentar reconectar cada 5 segundos
 unsigned long lastSendTime = 0;
-const int sendInterval = 20; // ms
+const int sendInterval = 10; // ms
 
 // ================= FUNCIONES =================
 bool setup_wifi();
@@ -202,14 +202,18 @@ void TaskControlCode(void *pvParameters)
             lastMode = modoActual;
             switch (modoActual)
             {
-            case 0: // Modo piloto
+            case 0:                         // Modo piloto
+                digitalWrite(pinLed, HIGH); // Indicador de inicio
                 Serial.println("Modo piloto activado");
                 setup_pilote_mode();
+                digitalWrite(pinLed, LOW); // Indicador de inicio
                 break;
-            case 2: // Modo manual
+            case 2:                         // Modo manual
+                digitalWrite(pinLed, HIGH); // Indicador de inicio
                 Serial.println("Modo manual activado");
                 channelInterrupHandler();
                 setup_manual_mode();
+                digitalWrite(pinLed, LOW); // Indicador de inicio
                 break;
             case 1: // Modo espera
                 Serial.println("Modo espera activado");

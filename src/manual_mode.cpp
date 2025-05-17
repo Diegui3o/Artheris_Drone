@@ -106,7 +106,6 @@ void channelInterrupHandler()
 void setup_manual_mode()
 {
   pinMode(pinLed, OUTPUT);
-  digitalWrite(pinLed, HIGH);
   delay(50);
   Serial.begin(115200);
   Serial.println("Iniciando modo manual...");
@@ -126,7 +125,6 @@ void setup_manual_mode()
   attachInterrupt(digitalPinToInterrupt(channel_6_pin), channelInterrupHandler, CHANGE);
 
   Serial.println("Setup completado.");
-  digitalWrite(pinLed, LOW);
 }
 
 void loop_manual_mode(float dt)
