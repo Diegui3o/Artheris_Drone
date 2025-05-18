@@ -138,7 +138,7 @@ void loop_yaw()
       yaw -= 360;
     else if (yaw < -180)
       yaw += 360;
-    float alpha = 0.22;
+    float alpha = 0.12;
     AngleYaw = (1 - alpha) * (AngleYaw + RateYaw * dt) + alpha * yaw;
     lastValidYaw = AngleYaw; // Guarda el último valor válido
   }

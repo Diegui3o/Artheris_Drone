@@ -203,9 +203,8 @@ void loop_manual_mode(float dt)
     MotorInput4 = ThrottleIdle;
   }
 
-  if (ReceiverValue[2] < 1030) // dont Arm the motors
+  if (ReceiverValue[2] < 1020) // dont Arm the motors
   {
-
     MotorInput1 = ThrottleCutOff;
     MotorInput2 = ThrottleCutOff;
     MotorInput3 = ThrottleCutOff;
