@@ -140,3 +140,6 @@ Kalman kalmanYaw = {0, 0, {1, 0, 0, 1}};
 
 unsigned long lastTime;
 float T = 0.0f;
+
+float magbias[3] = {0, 0, 0};  // Reemplaza estos valores tras calibrar
+float magscale[3] = {1, 1, 1}; // Reemplaza estos valores tras calibrar

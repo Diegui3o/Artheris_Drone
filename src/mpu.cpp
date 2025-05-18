@@ -11,6 +11,7 @@
 QMC5883LCompass compass;
 
 int yawOffset = 0;
+float lastValidYaw = 0; // Nuevo: almacena el último yaw válido
 #define SDA_MPU 21
 #define SCL_MPU 22
 #define SDA_TOF 4
@@ -82,7 +83,7 @@ void gyro_signals(void)
 
   gyroRateRoll = GyroX / 131.0;
   gyroRatePitch = GyroY / 131.0;
-  RateYaw = GyroZ / 131.0 + 1;
+  RateYaw = GyroZ / 131.0 + 1.1;
 
   AccX = (float)AccXLSB / 16384;
   AccY = (float)AccYLSB / 16384;
@@ -120,22 +121,32 @@ void loop_yaw()
   float roll_rad = AngleRoll * PI / 180.0;
   float pitch_rad = AnglePitch * PI / 180.0;
 
-  // Aplica la compensación estándar
-  float Xh = x * cos(pitch_rad) + z * sin(pitch_rad);
-  float Yh = x * sin(roll_rad) * sin(pitch_rad) + y * cos(roll_rad) - z * sin(roll_rad) * cos(pitch_rad);
+  // Define el umbral de inclinación permitido (en grados)
+  const float tilt_threshold = 3.0;
 
-  float heading = atan2(Yh, Xh) * 180.0 / PI;
-  if (heading < 0)
-    heading += 360;
-
-  int yaw = heading - yawOffset;
-  if (yaw > 180)
-    yaw -= 360;
-  if (yaw < -180)
-    yaw += 360;
-
-  float alpha = 0.90; // Ajusta entre 0.95 y 0.99 según tu preferencia
-  AngleYaw = alpha * (yaw + RateYaw * dt) + (1 - alpha) * AngleYaw;
+  // Usa los ángulos filtrados por Kalman
+  if (fabs(AngleRoll) < tilt_threshold && fabs(AnglePitch) < tilt_threshold)
+  {
+    float Xh = x * cos(pitch_rad) + z * sin(pitch_rad);
+    float Yh = x * sin(roll_rad) * sin(pitch_rad) + y * cos(roll_rad) - z * sin(roll_rad) * cos(pitch_rad);
+    // Si la inclinación es pequeña, calcula yaw normalmente
+    float heading = atan2(Yh, Xh) * 180.0 / PI;
+    if (heading < 0)
+      heading += 360;
+    int yaw = heading - yawOffset;
+    if (yaw > 180)
+      yaw -= 360;
+    else if (yaw < -180)
+      yaw += 360;
+    float alpha = 0.22;
+    AngleYaw = (1 - alpha) * (AngleYaw + RateYaw * dt) + alpha * yaw;
+    lastValidYaw = AngleYaw; // Guarda el último valor válido
+  }
+  else
+  {
+    // Si la inclinación es grande, conserva el último yaw válido
+    AngleYaw = lastValidYaw;
+  }
 }
 
 void setupMPU()
@@ -146,7 +157,7 @@ void setupMPU()
   // Initialize the compass
   compass.init();
   Serial.println("Compass initialized.");
-  compass.setMode(0x01, 0x0C, 0x10, 0x00); // Continuous mode, 10Hz, 8G range
+  compass.setMode(0x01, 0x0C, 0x20, 0x00); // 0x20 = 100Hz
 
   // Initialize the MPU6050
   accelgyro.initialize();
@@ -161,6 +172,7 @@ void setupMPU()
   }
   Serial.println("MPU6050 conectado correctamente.");
 
+  // Calcular yawOffset (promedio de 100 lecturas)
   delay(2000);
   compass.read();
   delay(20);

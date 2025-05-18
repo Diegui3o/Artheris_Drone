@@ -172,4 +172,7 @@ extern float T; // Empuje total deseado
 extern float vel_z;
 extern float error_z;
 
+extern float magbias[3];
+extern float magscale[3];
+
 #endif // VARIABLES_H
