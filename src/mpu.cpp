@@ -9,6 +9,10 @@ QMC5883LCompass compass;
 MPU6050 mpu;
 
 int yawOffset = 0;
+const int YAW_FILTER_SIZE = 5;
+float yawHistory[YAW_FILTER_SIZE] = {0};
+int yawIndex = 0;
+const float MAG_THRESHOLD = 1500.0; // Ajustar según pruebas
 
 // Función para el filtro de Kalman (roll)
 double Kalman_filter(Kalman &kf, float newAngle, float newRate, float dt)
@@ -114,34 +118,46 @@ void loop_yaw()
   if (yaw < -180)
     yaw += 360;
 
+  // Actualiza AngleYaw directamente con el yaw calculado
+  AngleYaw = yaw;
+
   // --- PITCH y ROLL desde MPU6050 ---
   int16_t ax, ay, az;
   mpu.getAcceleration(&ax, &ay, &az);
 
-  float AccX = ax / 16384.0;
-  float AccY = ay / 16384.0;
-  float AccZ = az / 16384.0;
+  // Leer giroscopio
+  gyro_signals();
+  float gyroYaw = AngleYaw + RateYaw * dt;
 
-  float pitch = atan2(-AccX, sqrt(AccY * AccY + AccZ * AccZ)) * 180.0 / PI;
-  float roll = atan2(AccY, AccZ) * 180.0 / PI;
+  // Detectar interferencia
+  int x = compass.getX(), y = compass.getY(), z = compass.getZ();
+  float magMagnitude = sqrt(x * x + y * y + z * z);
 
+  // Suavizado
+  yawHistory[yawIndex] = AngleYaw;
+  yawIndex = (yawIndex + 1) % YAW_FILTER_SIZE;
+  float smoothedYaw = 0;
+  for (int i = 0; i < YAW_FILTER_SIZE; i++)
+    smoothedYaw += yawHistory[i];
+  AngleYaw = smoothedYaw / YAW_FILTER_SIZE;
+
+  // Compensación por roll y pitch (opcional, puedes ajustar o comentar si no es útil)
   if (roll < 0)
   {
-    yaw += 0.3 * roll;
+    AngleYaw += 0.3 * roll;
   }
   if (roll > 0)
   {
-    yaw -= 0.02 * roll;
+    AngleYaw -= 0.02 * roll;
   }
   if (pitch < 0)
   {
-    yaw -= 0.3 * pitch;
+    AngleYaw -= 0.3 * pitch;
   }
   if (pitch > 0)
   {
-    yaw += 0.001 * pitch;
+    AngleYaw += 0.001 * pitch;
   }
-  AngleYaw = yaw;
 }
 
 void setupMPU()
@@ -151,7 +167,8 @@ void setupMPU()
 
   compass.init();
   mpu.initialize();
-
+  // Calibración automática al inicio
+  compass.setCalibration(-1767, 1345, -1503, 1199, -1325, 1567);
   delay(2000); // Esperar estabilización
 
   compass.read();

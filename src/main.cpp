@@ -40,8 +40,13 @@ WebSocketsClient webSocket;
 unsigned long lastConnectionAttempt = 0;
 const long connectionInterval = 5000; // Intentar reconectar cada 5 segundos
 unsigned long lastSendTime = 0;
-const int sendInterval = 10; // ms
-
+const int sendInterval = 5;
+#define BUFFER_SIZE 5
+struct SensorData
+{
+    float roll, pitch, yaw;
+} sensorBuffer[BUFFER_SIZE];
+int bufferIndex = 0;
 // ================= FUNCIONES =================
 bool setup_wifi();
 void webSocketEvent(WStype_t type, uint8_t *payload, size_t length);
@@ -80,7 +85,6 @@ bool setup_wifi()
     }
 
     Serial.println("\n✅ WiFi conectado. IP: " + WiFi.localIP().toString());
-    setupMotores();
     return true;
 }
 
@@ -220,7 +224,6 @@ void TaskControlCode(void *pvParameters)
                 apagarMotores();
                 break;
             default:
-                // No hacer nada especial
                 break;
             }
         }
@@ -229,7 +232,7 @@ void TaskControlCode(void *pvParameters)
         {
             static uint32_t last_time = 0;
             float dt = (micros() - last_time) / 1e6;
-            if (dt >= 0.002)
+            if (dt >= 0.04)
             {
                 if (xSemaphoreTake(sensorMutex, portMAX_DELAY) == pdTRUE)
                 {
@@ -263,8 +266,8 @@ void TaskComunicacionCode(void *pvParameters)
             connectToWebSocket();
         }
 
-        // Lectura de sensores protegida por mutex
-        if (xSemaphoreTake(sensorMutex, portMAX_DELAY) == pdTRUE)
+        // Lectura de sensores protegida por mutex (timeout corto para evitar bloqueo)
+        if (xSemaphoreTake(sensorMutex, 2 / portTICK_PERIOD_MS) == pdTRUE)
         {
             gyro_signals();
             loop_yaw();
@@ -285,40 +288,61 @@ void TaskComunicacionCode(void *pvParameters)
 
 void prepareAndSendMessage()
 {
-    DynamicJsonDocument doc(1024);
-    doc["type"] = "telemetria";
-    JsonObject payload = doc.createNestedObject("payload");
+    // Bloque 1: Ángulos y tasas
+    {
+        DynamicJsonDocument doc(1012);
+        doc["type"] = "angles";
+        JsonObject payload = doc.createNestedObject("payload");
+        payload["AngleRoll"] = AngleRoll_est;
+        payload["AnglePitch"] = AnglePitch_est;
+        payload["AngleYaw"] = AngleYaw;
+        payload["RateRoll"] = gyroRateRoll;
+        payload["RatePitch"] = gyroRatePitch;
+        payload["RateYaw"] = RateYaw;
+        payload["AccX"] = AccX;
+        payload["AccY"] = AccY;
+        payload["AccZ"] = AccZ;
+        String jsonString;
+        serializeJson(doc, jsonString);
+        webSocket.sendTXT(jsonString);
+    }
 
-    payload["AngleRoll"] = AngleRoll_est;
-    payload["AnglePitch"] = AnglePitch_est;
-    payload["AngleYaw"] = AngleYaw;
-    payload["RateRoll"] = gyroRateRoll;
-    payload["RatePitch"] = gyroRatePitch;
-    payload["RateYaw"] = RateYaw;
-    payload["AccX"] = AccX;
-    payload["AccY"] = AccY;
-    payload["AccZ"] = AccZ;
-    payload["tau_x"] = tau_x;
-    payload["tau_y"] = tau_y;
-    payload["tau_z"] = tau_z;
-    payload["KalmanAngleRoll"] = AngleRoll;
-    payload["KalmanAnglePitch"] = AnglePitch;
-    payload["error_phi"] = error_phi;
-    payload["error_theta"] = error_theta;
-    payload["InputThrottle"] = InputThrottle;
-    payload["InputRoll"] = DesiredAngleRoll;
-    payload["InputPitch"] = DesiredAnglePitch;
-    payload["InputYaw"] = DesiredRateYaw;
-    payload["MotorInput1"] = MotorInput1;
-    payload["MotorInput2"] = MotorInput2;
-    payload["MotorInput3"] = MotorInput3;
-    payload["MotorInput4"] = MotorInput4;
-    payload["Altura"] = T;
-    payload["modo"] = modoActual;
+    // Bloque 2: Control LQR
+    {
+        DynamicJsonDocument doc(1084);
+        doc["type"] = "control";
+        JsonObject payload = doc.createNestedObject("payload");
+        payload["tau_x"] = tau_x;
+        payload["tau_y"] = tau_y;
+        payload["tau_z"] = tau_z;
+        payload["KalmanAngleRoll"] = AngleRoll;
+        payload["KalmanAnglePitch"] = AnglePitch;
+        payload["error_phi"] = error_phi;
+        payload["error_theta"] = error_theta;
+        payload["InputThrottle"] = InputThrottle;
+        payload["InputRoll"] = DesiredAngleRoll;
+        payload["InputPitch"] = DesiredAnglePitch;
+        payload["InputYaw"] = DesiredRateYaw;
+        String jsonString;
+        serializeJson(doc, jsonString);
+        webSocket.sendTXT(jsonString);
+    }
 
-    String jsonString;
-    serializeJson(doc, jsonString);
-    webSocket.sendTXT(jsonString);
+    // Bloque 3: Salidas a motores
+    {
+        DynamicJsonDocument doc(1056);
+        doc["type"] = "motors";
+        JsonObject payload = doc.createNestedObject("payload");
+        payload["MotorInput1"] = MotorInput1;
+        payload["MotorInput2"] = MotorInput2;
+        payload["MotorInput3"] = MotorInput3;
+        payload["MotorInput4"] = MotorInput4;
+        payload["Altura"] = T;
+        payload["modo"] = modoActual;
+        String jsonString;
+        serializeJson(doc, jsonString);
+        webSocket.sendTXT(jsonString);
+    }
 }
 
 void changeMode(int newMode)
