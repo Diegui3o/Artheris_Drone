@@ -15,7 +15,7 @@ SemaphoreHandle_t sensorMutex = NULL;
 // ================= CONFIGURACIÓN =================
 const char *ssid = "FAMILIAMYM";
 const char *password = "mm221418";
-const char *websocket_server = "192.168.1.64"; // IP de tu servidor Node.js
+const char *websocket_server = "192.168.1.73"; // IP de tu servidor Node.js
 const int websocket_port = 3002;               // Puerto debe coincidir con el servidor
 const char *websocket_path = "/esp32";
 

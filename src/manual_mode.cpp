@@ -10,14 +10,14 @@
 
 // === Matrices LQR ===
 const float Ki_at[3][3] = {
-    {0.90, 0, 0},
-    {0, 0.90, 0},
-    {0, 0, 0.162}};
+    {1.90, 0, 0},
+    {0, 1.90, 0},
+    {0, 0, 1.9}};
 
 const float Kc_at[3][6] = {
-    {5.98, 0, 0, 3.57, 0, 0},
-    {0, 5.99, 0, 0, 3.58, 0},
-    {0, 0, 3.6, 0, 0, 1.60}};
+    {5.98, 0, 0, 3.38, 0, 0},
+    {0, 5.99, 0, 0, 3.38, 0},
+    {0, 0, 2.9864, 0, 0, 1.20}};
 
 void channelInterrupHandler()
 {
@@ -144,7 +144,7 @@ void loop_manual_mode(float dt)
   tau_y = Ki_at[1][1] * x_i[1] + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
   tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi - Kc_at[2][5] * x_c[5];
 
-  error_phi = phi_ref - x_c[0];
+  error_phi = 1 - x_c[0];
   error_theta = theta_ref - x_c[1];
   error_psi = psi_ref - x_c[2];
 

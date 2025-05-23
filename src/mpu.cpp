@@ -1,21 +1,14 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include <ESP32Servo.h>
-#include "I2Cdev.h"
-#include <VL53L0X.h>
+#include <QMC5883LCompass.h>
+#include <MPU6050.h>
 #include "variables.h"
 #include "mpu.h"
-#include "piloto_mode.h"
-#include <QMC5883LCompass.h>
 
 QMC5883LCompass compass;
+MPU6050 mpu;
 
 int yawOffset = 0;
-float lastValidYaw = 0; // Nuevo: almacena el último yaw válido
-#define SDA_MPU 21
-#define SCL_MPU 22
-#define SDA_TOF 4
-#define SCL_TOF 5
 
 // Función para el filtro de Kalman (roll)
 double Kalman_filter(Kalman &kf, float newAngle, float newRate, float dt)
@@ -111,72 +104,58 @@ void gyro_signals(void)
 
 void loop_yaw()
 {
+  // --- YAW desde QMC5883L ---
   compass.read();
-  int x = compass.getX();
-  int y = compass.getY();
-  int z = compass.getZ();
+  int heading = compass.getAzimuth();
+  int yaw = heading - yawOffset;
 
-  // Compensación de inclinación (tilt compensation)
-  // Usa los ángulos actuales de roll y pitch en radianes
-  float roll_rad = AngleRoll * PI / 180.0;
-  float pitch_rad = AnglePitch * PI / 180.0;
+  if (yaw > 180)
+    yaw -= 360;
+  if (yaw < -180)
+    yaw += 360;
 
-  // Define el umbral de inclinación permitido (en grados)
-  const float tilt_threshold = 3.0;
+  // --- PITCH y ROLL desde MPU6050 ---
+  int16_t ax, ay, az;
+  mpu.getAcceleration(&ax, &ay, &az);
 
-  // Usa los ángulos filtrados por Kalman
-  if (fabs(AngleRoll) < tilt_threshold && fabs(AnglePitch) < tilt_threshold)
+  float AccX = ax / 16384.0;
+  float AccY = ay / 16384.0;
+  float AccZ = az / 16384.0;
+
+  float pitch = atan2(-AccX, sqrt(AccY * AccY + AccZ * AccZ)) * 180.0 / PI;
+  float roll = atan2(AccY, AccZ) * 180.0 / PI;
+
+  if (roll < 0)
   {
-    float Xh = x * cos(pitch_rad) + z * sin(pitch_rad);
-    float Yh = x * sin(roll_rad) * sin(pitch_rad) + y * cos(roll_rad) - z * sin(roll_rad) * cos(pitch_rad);
-    // Si la inclinación es pequeña, calcula yaw normalmente
-    float heading = atan2(Yh, Xh) * 180.0 / PI;
-    if (heading < 0)
-      heading += 360;
-    int yaw = heading - yawOffset;
-    if (yaw > 180)
-      yaw -= 360;
-    else if (yaw < -180)
-      yaw += 360;
-    float alpha = 0.12;
-    AngleYaw = (1 - alpha) * (AngleYaw + RateYaw * dt) + alpha * yaw;
-    lastValidYaw = AngleYaw; // Guarda el último valor válido
+    yaw += 0.3 * roll;
   }
-  else
+  if (roll > 0)
   {
-    // Si la inclinación es grande, conserva el último yaw válido
-    AngleYaw = lastValidYaw;
+    yaw -= 0.02 * roll;
   }
+  if (pitch < 0)
+  {
+    yaw -= 0.3 * pitch;
+  }
+  if (pitch > 0)
+  {
+    yaw += 0.001 * pitch;
+  }
+  AngleYaw = yaw;
 }
 
 void setupMPU()
 {
   Serial.begin(115200);
-  Wire.begin(SDA_MPU, SCL_MPU, 100000); // 100kHz
+  Wire.begin(21, 22); // SDA = GPIO21, SCL = GPIO22
 
-  // Initialize the compass
   compass.init();
-  Serial.println("Compass initialized.");
-  compass.setMode(0x01, 0x0C, 0x20, 0x00); // 0x20 = 100Hz
+  mpu.initialize();
 
-  // Initialize the MPU6050
-  accelgyro.initialize();
-  // calibrateSensors();
-  if (!accelgyro.testConnection())
-  {
-    Serial.println("Error: No se pudo conectar con el MPU6050.");
-    while (true)
-    {
-      delay(1000);
-    }
-  }
-  Serial.println("MPU6050 conectado correctamente.");
+  delay(2000); // Esperar estabilización
 
-  // Calcular yawOffset (promedio de 100 lecturas)
-  delay(2000);
   compass.read();
-  delay(20);
-  yawOffset = compass.getAzimuth();
+  yawOffset = compass.getAzimuth(); // Yaw inicial como referencia
   Serial.print("Calibrado. Dirección inicial = ");
   Serial.print(yawOffset);
   Serial.println("° (ahora es yaw = 0°)");
