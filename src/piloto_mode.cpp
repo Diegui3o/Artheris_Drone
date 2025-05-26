@@ -51,11 +51,6 @@ void loop_pilote_mode(float dt)
     error_theta = theta_ref - x_pitch[0];
     error_psi = psi_ref - x_yaw[0];
 
-    // Actualizar integrales (con anti-windup)
-    integral_phi += constrain(error_phi * dt, -0.5, 0.5);
-    integral_theta += constrain(error_theta * dt, -0.5, 0.5);
-    integral_psi += constrain(error_psi * dt, -0.1, 0.1);
-
     // Control LQR (actitud + integral)
     tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_roll[1];
     tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta - Kc_at[1][3] * x_pitch[1];

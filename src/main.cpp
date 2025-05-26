@@ -15,8 +15,8 @@ SemaphoreHandle_t sensorMutex = NULL;
 // ================= CONFIGURACIÓN =================
 const char *ssid = "FAMILIAMYM";
 const char *password = "mm221418";
-const char *websocket_server = "192.168.1.73"; // IP de tu servidor Node.js
-const int websocket_port = 3002;               // Puerto debe coincidir con el servidor
+const char *websocket_server = "192.168.1.79";
+const int websocket_port = 3003;
 const char *websocket_path = "/esp32";
 
 // Configuración IP fija
@@ -40,8 +40,9 @@ WebSocketsClient webSocket;
 unsigned long lastConnectionAttempt = 0;
 const long connectionInterval = 5000; // Intentar reconectar cada 5 segundos
 unsigned long lastSendTime = 0;
-const int sendInterval = 5;
-#define BUFFER_SIZE 5
+const int sendInterval = 5; // 5ms (200Hz)
+char txBuffer[128];         // Buffer para mensajes CSV;
+#define BUFFER_SIZE 40
 struct SensorData
 {
     float roll, pitch, yaw;
@@ -92,19 +93,16 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
 {
     switch (type)
     {
-    case WStype_DISCONNECTED:
-        Serial.println("❌ Desconectado del WebSocket");
-        break;
-    case WStype_CONNECTED:
-        Serial.println("✅ Conectado al WebSocket");
-        // Enviar mensaje de identificación
-        webSocket.sendTXT("{\"type\":\"identify\",\"device\":\"esp32\"}");
-        break;
     case WStype_TEXT:
-        Serial.printf("📩 Mensaje recibido: %s\n", payload);
-        // Procesar comandos recibidos
-        processWebSocketMessage((const char *)payload);
+    {
+        // Asumimos que los comandos siguen en JSON
+        char *message = (char *)payload;
+        if (message[0] == '{')
+        { // Es JSON
+            processWebSocketMessage(message);
+        }
         break;
+    }
     case WStype_ERROR:
         Serial.printf("❌ Error WebSocket: %s\n", payload);
         break;
@@ -113,6 +111,8 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
         break;
     case WStype_PONG:
         Serial.println("🛜 Pong recibido");
+        break;
+    default:
         break;
     }
 }
@@ -255,8 +255,6 @@ void TaskComunicacionCode(void *pvParameters)
     for (;;)
     {
         esp_task_wdt_reset();
-
-        // Manejar conexión WebSocket
         webSocket.loop();
 
         // Reconexión si es necesario
@@ -266,7 +264,7 @@ void TaskComunicacionCode(void *pvParameters)
             connectToWebSocket();
         }
 
-        // Lectura de sensores protegida por mutex (timeout corto para evitar bloqueo)
+        // Lectura de sensores
         if (xSemaphoreTake(sensorMutex, 2 / portTICK_PERIOD_MS) == pdTRUE)
         {
             gyro_signals();
@@ -274,75 +272,51 @@ void TaskComunicacionCode(void *pvParameters)
             xSemaphoreGive(sensorMutex);
         }
 
-        // Envío periódico de datos
+        // Envío de datos a intervalo fijo
         unsigned long currentTime = millis();
-        if (currentTime - lastSendTime >= sendInterval && webSocket.isConnected())
+        if (currentTime - lastSendTime >= sendInterval)
         {
             lastSendTime = currentTime;
-            prepareAndSendMessage();
+            if (webSocket.isConnected())
+            {
+                prepareAndSendMessage();
+            }
         }
 
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(1 / portTICK_PERIOD_MS); // Reducir delay
     }
 }
 
 void prepareAndSendMessage()
 {
-    // Bloque 1: Ángulos y tasas
-    {
-        DynamicJsonDocument doc(1012);
-        doc["type"] = "angles";
-        JsonObject payload = doc.createNestedObject("payload");
-        payload["AngleRoll"] = AngleRoll_est;
-        payload["AnglePitch"] = AnglePitch_est;
-        payload["AngleYaw"] = AngleYaw;
-        payload["RateRoll"] = gyroRateRoll;
-        payload["RatePitch"] = gyroRatePitch;
-        payload["RateYaw"] = RateYaw;
-        payload["AccX"] = AccX;
-        payload["AccY"] = AccY;
-        payload["AccZ"] = AccZ;
-        String jsonString;
-        serializeJson(doc, jsonString);
-        webSocket.sendTXT(jsonString);
-    }
-
-    // Bloque 2: Control LQR
-    {
-        DynamicJsonDocument doc(1084);
-        doc["type"] = "control";
-        JsonObject payload = doc.createNestedObject("payload");
-        payload["tau_x"] = tau_x;
-        payload["tau_y"] = tau_y;
-        payload["tau_z"] = tau_z;
-        payload["KalmanAngleRoll"] = AngleRoll;
-        payload["KalmanAnglePitch"] = AnglePitch;
-        payload["error_phi"] = error_phi;
-        payload["error_theta"] = error_theta;
-        payload["InputThrottle"] = InputThrottle;
-        payload["InputRoll"] = DesiredAngleRoll;
-        payload["InputPitch"] = DesiredAnglePitch;
-        payload["InputYaw"] = DesiredRateYaw;
-        String jsonString;
-        serializeJson(doc, jsonString);
-        webSocket.sendTXT(jsonString);
-    }
-
-    // Bloque 3: Salidas a motores
-    {
-        DynamicJsonDocument doc(1056);
-        doc["type"] = "motors";
-        JsonObject payload = doc.createNestedObject("payload");
-        payload["MotorInput1"] = MotorInput1;
-        payload["MotorInput2"] = MotorInput2;
-        payload["MotorInput3"] = MotorInput3;
-        payload["MotorInput4"] = MotorInput4;
-        payload["Altura"] = T;
-        payload["modo"] = modoActual;
-        String jsonString;
-        serializeJson(doc, jsonString);
-        webSocket.sendTXT(jsonString);
-    }
+    String msg = String(millis()) + "," +
+                 String(AngleRoll_est) + "," +
+                 String(AnglePitch_est) + "," +
+                 String(AngleYaw) + "," +
+                 String(gyroRateRoll) + "," +
+                 String(gyroRatePitch) + "," +
+                 String(RateYaw) + "," +
+                 String(AccX) + "," +
+                 String(AccY) + "," +
+                 String(AccZ) + "," +
+                 String(tau_x) + "," +
+                 String(tau_y) + "," +
+                 String(tau_z) + "," +
+                 String(AngleRoll) + "," +
+                 String(AnglePitch) + "," +
+                 String(error_phi) + "," +
+                 String(error_theta) + "," +
+                 String(InputThrottle) + "," +
+                 String(DesiredAngleRoll) + "," +
+                 String(DesiredAnglePitch) + "," +
+                 String(DesiredRateYaw) + "," +
+                 String(MotorInput1) + "," +
+                 String(MotorInput2) + "," +
+                 String(MotorInput3) + "," +
+                 String(MotorInput4) + "," +
+                 String(T) + "," +
+                 String(modoActual);
+    webSocket.sendTXT(msg);
 }
 
 void changeMode(int newMode)
@@ -396,7 +370,7 @@ void setup()
 
     // Crear el mutex antes de iniciar las tareas
     sensorMutex = xSemaphoreCreateMutex();
-
+    setupMotores();
     xTaskCreatePinnedToCore(
         TaskControlCode,
         "TaskControl",
