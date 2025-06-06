@@ -90,7 +90,7 @@ volatile float MotorInput1, MotorInput2, MotorInput3, MotorInput4;
 // Variables de estado
 volatile float phi_ref = 0.0;
 volatile float theta_ref = 0.0;
-volatile float psi_ref = 0.0;
+volatile float psi_ref = 1.0;
 volatile float integral_phi;
 volatile float integral_theta;
 volatile float integral_psi;
@@ -143,3 +143,9 @@ float T = 0.0f;
 
 float magbias[3] = {0, 0, 0};  // Reemplaza estos valores tras calibrar
 float magscale[3] = {1, 1, 1}; // Reemplaza estos valores tras calibrar
+
+// Quaternion variables for orientation (initialize to identity quaternion)
+float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;
+
+// Euler angles in radians (converted from quaternions)
+float yaw = 0.0f;

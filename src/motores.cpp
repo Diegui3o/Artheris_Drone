@@ -78,10 +78,10 @@ void encenderMotores(int speed)
 // === CONTROL A LOS MOTORES ===
 void applyControl(float tau_x, float tau_y, float tau_z)
 {
-    float pwm1 = InputThrottle - tau_x - tau_y + tau_z;
-    float pwm2 = InputThrottle - tau_x + tau_y - tau_z;
-    float pwm3 = InputThrottle + tau_x + tau_y + tau_z;
-    float pwm4 = InputThrottle + tau_x - tau_y - tau_z;
+    float pwm1 = InputThrottle - tau_x - tau_y - tau_z;
+    float pwm2 = InputThrottle - tau_x + tau_y + tau_z;
+    float pwm3 = InputThrottle + tau_x + tau_y - tau_z;
+    float pwm4 = InputThrottle + tau_x - tau_y + tau_z;
 
     // Limitar valores PWM
     MotorInput1 = constrain(pwm1, 1000, 2000);

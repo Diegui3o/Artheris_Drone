@@ -175,4 +175,10 @@ extern float error_z;
 extern float magbias[3];
 extern float magscale[3];
 
+// Quaternion variables for orientation
+extern float q0, q1, q2, q3;
+
+// Euler angles in radians (converted from quaternions)
+extern float yaw;
+
 #endif // VARIABLES_H
