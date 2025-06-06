@@ -14,6 +14,9 @@ float yawHistory[YAW_FILTER_SIZE] = {0};
 int yawIndex = 0;
 const float MAG_THRESHOLD = 1500.0; // Ajustar según pruebas
 
+// Variable para umbral de compensación configurable
+static float compensationThreshold = 2.0; // Grados mínimos para activar compensación
+
 // Función para el filtro de Kalman (roll)
 double Kalman_filter(Kalman &kf, float newAngle, float newRate, float dt)
 {
@@ -104,95 +107,69 @@ void gyro_signals(void)
 
 void loop_yaw()
 {
+  // Primero actualizar los valores de roll y pitch
   gyro_signals();
 
-  // --- YAW calculation ---
-  int16_t ax, ay, az;
-  int16_t gx, gy, gz;
-  mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+  // --- YAW desde QMC5883L ---
+  compass.read();
+  int heading = compass.getAzimuth();
+  int yaw = heading - yawOffset;
 
-  // Convertir datos del giroscopio a rad/s (dividir por el factor de escala 131 para +/- 250 dps)
-  float gx_rad = (gx / 131.0) * (M_PI / 180.0);
-  float gy_rad = (gy / 131.0) * (M_PI / 180.0);
-  float gz_rad = (gz / 131.0) * (M_PI / 180.0);
+  if (yaw > 180)
+    yaw -= 360;
+  if (yaw < -180)
+    yaw += 360;
 
-  // Integrar giroscopio para actualizar cuaterniones
-  float q0_new = q0 + (-q1 * gx_rad - q2 * gy_rad - q3 * gz_rad) * 0.5 * dt;
-  float q1_new = q1 + (q0 * gx_rad + q3 * gy_rad - q2 * gz_rad) * 0.5 * dt;
-  float q2_new = q2 + (-q3 * gx_rad + q0 * gy_rad + q1 * gz_rad) * 0.5 * dt;
-  float q3_new = q3 + (q2 * gx_rad - q1 * gy_rad + q0 * gz_rad) * 0.5 * dt;
-
-  // Normalizar cuaterniones
-  float norm = sqrt(q0_new * q0_new + q1_new * q1_new + q2_new * q2_new + q3_new * q3_new);
-  if (norm == 0)
-    return; // Evitar división por cero
-
-  q0 = q0_new / norm;
-  q1 = q1_new / norm;
-  q2 = q2_new / norm;
-  q3 = q3_new / norm;
-
-  // Convertir cuaterniones a ángulos de Euler
-  roll = atan2(2 * (q0 * q1 + q2 * q3), 1 - 2 * (q1 * q1 + q2 * q2));
-  pitch = asin(2 * (q0 * q2 - q3 * q1));
-
-  // Convertir roll y pitch a grados para verificar si están cerca de 0
-  float roll_deg = roll * 180.0 / M_PI;
-  float pitch_deg = pitch * 180.0 / M_PI;
-
-  // Definir umbral para considerar "cerca de 0" (ajustable según necesidad)
-  const float LEVEL_THRESHOLD = 15.0; // grados
-
-  // Verificar si el dispositivo está relativamente nivelado
-  if (abs(roll_deg) < LEVEL_THRESHOLD && abs(pitch_deg) < LEVEL_THRESHOLD)
-  {
-    // CASO 1: Dispositivo nivelado - usar magnetómetro para yaw
-    compass.read();
-    int mx = compass.getX();
-    int my = compass.getY();
-    int mz = compass.getZ();
-
-    // Calcular yaw usando magnetómetro con compensación de tilt básica
-    float yaw_mag = atan2(my, mx) * 180.0 / M_PI;
-
-    // Ajustar con offset inicial
-    yaw_mag -= yawOffset;
-
-    // Normalizar entre -180 y 180
-    if (yaw_mag > 180)
-      yaw_mag -= 360;
-    if (yaw_mag < -180)
-      yaw_mag += 360;
-
-    yaw = yaw_mag;
-
-    // Debug
-    Serial.print("Nivelado - Yaw magnetómetro: ");
-    Serial.println(yaw);
-  }
-  else
-  {
-    // CASO 2: Dispositivo inclinado - usar solo cuaterniones
-    yaw = atan2(2 * (q0 * q3 + q1 * q2), 1 - 2 * (q2 * q2 + q3 * q3));
-    yaw *= 180.0 / M_PI;
-
-    // Ajustar yaw para que esté entre -180 y 180
-    if (yaw > 180)
-      yaw -= 360;
-    if (yaw < -180)
-      yaw += 360;
-
-    // Debug
-    Serial.print("Inclinado - Yaw cuaterniones: ");
-    Serial.println(yaw);
-  }
-
-  // Convertir roll y pitch finales a grados
-  roll = roll_deg;
-  pitch = pitch_deg;
-
-  // Actualizar AngleYaw
+  // Actualiza AngleYaw directamente con el yaw calculado
   AngleYaw = yaw;
+
+  // --- PITCH y ROLL desde MPU6050 ---
+  int16_t ax, ay, az;
+  mpu.getAcceleration(&ax, &ay, &az);
+
+  // Usar el yaw calculado del magnetómetro
+  float gyroYaw = AngleYaw + RateYaw * dt;
+
+  // Detectar interferencia
+  int x = compass.getX(), y = compass.getY(), z = compass.getZ();
+  float magMagnitude = sqrt(x * x + y * y + z * z);
+
+  // Suavizado
+  yawHistory[yawIndex] = AngleYaw;
+  yawIndex = (yawIndex + 1) % YAW_FILTER_SIZE;
+  float smoothedYaw = 0;
+  for (int i = 0; i < YAW_FILTER_SIZE; i++)
+    smoothedYaw += yawHistory[i];
+  float Yaw = smoothedYaw / YAW_FILTER_SIZE;
+
+  float yawOriginal = Yaw; // Guardar valor original para debug
+
+  // Solo aplicar compensación si hay inclinación real (umbral configurable)
+  if (abs(AngleRoll) > compensationThreshold || abs(AnglePitch) > compensationThreshold)
+  {
+
+    // Compensación para Roll
+    if (AngleRoll < -compensationThreshold) // Roll negativo significativo
+    {
+      Yaw += AngleRoll/10;
+    }
+    else if (AngleRoll > compensationThreshold) // Roll positivo significativo
+    {
+      Yaw += 0.02 * AngleRoll;
+    }
+
+    // Compensación para Pitch
+    if (AnglePitch < -compensationThreshold) // Pitch negativo significativo
+    {
+      Yaw -= 0.3 * AnglePitch;
+    }
+    else if (AnglePitch > compensationThreshold) // Pitch positivo significativo
+    {
+      Yaw = 0.5 * AnglePitch;
+    }
+  }
+
+  AngleYaw = Yaw;
 }
 
 void setupMPU()
@@ -205,18 +182,6 @@ void setupMPU()
   // Calibración automática al inicio
   compass.setCalibration(-1767, 1345, -1503, 1199, -1325, 1567);
   delay(2000); // Esperar estabilización
-
-  // Inicializar cuaterniones (identidad)
-  q0 = 1.0f;
-  q1 = 0.0f;
-  q2 = 0.0f;
-  q3 = 0.0f;
-
-  // Inicializar ángulos de Euler
-  roll = 0.0f;
-  pitch = 0.0f;
-  yaw = 0.0f;
-
   calibrateSensors();
   compass.read();
   yawOffset = compass.getAzimuth(); // Yaw inicial como referencia

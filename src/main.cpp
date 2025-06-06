@@ -15,13 +15,13 @@ SemaphoreHandle_t sensorMutex = NULL;
 // ================= CONFIGURACIÓN =================
 const char *ssid = "FAMILIAMYM";
 const char *password = "mm221418";
-const char *websocket_server = "192.168.1.9";
+const char *websocket_server = "192.168.1.11";
 const int websocket_port = 3003;
 const char *websocket_path = "/esp32";
 
 // Configuración IP fija
-IPAddress local_IP(192, 168, 0, 200); // IP fija para el ESP32 en la red Wi-Fi
-IPAddress gateway(192, 168, 0, 1);    // Puerta de enlace de tu red Wi-Fi
+IPAddress local_IP(192, 168, 1, 200); // IP fija para el ESP32 en la red Wi-Fi
+IPAddress gateway(192, 168, 1, 1);    // Puerta de enlace de tu red Wi-Fi
 IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);
 IPAddress secondaryDNS(8, 8, 4, 4);
@@ -40,16 +40,14 @@ WebSocketsClient webSocket;
 unsigned long lastConnectionAttempt = 0;
 const long connectionInterval = 5000; // Intentar reconectar cada 5 segundos
 unsigned long lastSendTime = 0;
-const int sendInterval = 50; // 50ms (20Hz) - Reducir frecuencia para evitar congestión
-char txBuffer[308];          // Buffer para mensajes CSV;
-#define BUFFER_SIZE 50       // Reducir buffer para mejor manejo de memoria
+const int sendInterval = 10; // 5ms (200Hz)
+char txBuffer[200];          // Buffer para mensajes CSV;
+#define BUFFER_SIZE 60
 struct SensorData
 {
     float roll, pitch, yaw;
-    unsigned long timestamp;
 } sensorBuffer[BUFFER_SIZE];
 int bufferIndex = 0;
-bool bufferFull = false;
 // ================= FUNCIONES =================
 bool setup_wifi();
 void webSocketEvent(WStype_t type, uint8_t *payload, size_t length);
@@ -191,11 +189,8 @@ void connectToWebSocket()
     Serial.println("Intentando conectar WebSocket...");
     webSocket.begin(websocket_server, websocket_port, websocket_path);
     webSocket.onEvent(webSocketEvent);
-    webSocket.setReconnectInterval(5000);      // Aumentar intervalo de reconexión
-    webSocket.enableHeartbeat(30000, 5000, 3); // Heartbeat menos frecuente
-
-    // Configurar buffer más pequeño para envíos
-    webSocket.enableHeartbeat(30000, 5000, 2);
+    webSocket.setReconnectInterval(3000);
+    webSocket.enableHeartbeat(15000, 3000, 2);
 }
 
 void TaskControlCode(void *pvParameters)
@@ -237,9 +232,9 @@ void TaskControlCode(void *pvParameters)
         {
             static uint32_t last_time = 0;
             float dt = (micros() - last_time) / 1e6;
-            if (dt >= 0.01) // 100Hz para control - más frecuente que comunicación
+            if (dt >= 0.04)
             {
-                if (xSemaphoreTake(sensorMutex, 5 / portTICK_PERIOD_MS) == pdTRUE) // Timeout más corto
+                if (xSemaphoreTake(sensorMutex, portMAX_DELAY) == pdTRUE)
                 {
                     if (modoActual == 0)
                         loop_pilote_mode(dt);
@@ -250,16 +245,13 @@ void TaskControlCode(void *pvParameters)
                 last_time = micros();
             }
         }
-        vTaskDelay(2 / portTICK_PERIOD_MS); // Aumentar delay para dar más tiempo a otras tareas
+        vTaskDelay(1 / portTICK_PERIOD_MS);
     }
 }
 
 void TaskComunicacionCode(void *pvParameters)
 {
     esp_task_wdt_add(NULL);
-    unsigned long lastSensorRead = 0;
-    const int sensorReadInterval = 5; // Leer sensores cada 5ms
-
     for (;;)
     {
         esp_task_wdt_reset();
@@ -272,19 +264,15 @@ void TaskComunicacionCode(void *pvParameters)
             connectToWebSocket();
         }
 
-        // Lectura de sensores con menor frecuencia y timeout
-        unsigned long currentTime = millis();
-        if (currentTime - lastSensorRead >= sensorReadInterval)
+        // Lectura de sensores
+        if (xSemaphoreTake(sensorMutex, 2 / portTICK_PERIOD_MS) == pdTRUE)
         {
-            lastSensorRead = currentTime;
-            if (xSemaphoreTake(sensorMutex, 3 / portTICK_PERIOD_MS) == pdTRUE) // Timeout más corto
-            {
-                loop_yaw();
-                xSemaphoreGive(sensorMutex);
-            }
+            loop_yaw();
+            xSemaphoreGive(sensorMutex);
         }
 
-        // Envío de datos a intervalo fijo más bajo
+        // Envío de datos a intervalo fijo
+        unsigned long currentTime = millis();
         if (currentTime - lastSendTime >= sendInterval)
         {
             lastSendTime = currentTime;
@@ -294,54 +282,40 @@ void TaskComunicacionCode(void *pvParameters)
             }
         }
 
-        vTaskDelay(3 / portTICK_PERIOD_MS); // Aumentar delay para mejor distribución de CPU
+        vTaskDelay(1 / portTICK_PERIOD_MS); // Reducir delay
     }
 }
 
 void prepareAndSendMessage()
 {
-    // Verificar si hay suficiente memoria antes de enviar
-    if (ESP.getFreeHeap() < 10000)
-    {
-        Serial.println("⚠️ Memoria baja, saltando envío");
-        return;
-    }
-
-    // Usar snprintf para mejor control de memoria
-    int length = snprintf(txBuffer, sizeof(txBuffer),
-                          "%lu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d",
-                          millis(),
-                          AngleRoll_est,
-                          AnglePitch_est,
-                          AngleYaw,
-                          gyroRateRoll,
-                          gyroRatePitch,
-                          RateYaw,
-                          AccX,
-                          AccY,
-                          AccZ,
-                          tau_x,
-                          tau_y,
-                          tau_z,
-                          AngleRoll,
-                          AnglePitch,
-                          error_phi,
-                          error_theta,
-                          InputThrottle,
-                          DesiredAngleRoll,
-                          DesiredAnglePitch,
-                          DesiredRateYaw,
-                          MotorInput1,
-                          MotorInput2,
-                          MotorInput3,
-                          MotorInput4,
-                          T,
-                          modoActual);
-
-    if (length > 0 && length < sizeof(txBuffer))
-    {
-        webSocket.sendTXT(txBuffer, length);
-    }
+    String msg = String(millis()) + "," +
+                 String(AngleRoll_est) + "," +
+                 String(AnglePitch_est) + "," +
+                 String(AngleYaw) + "," +
+                 String(gyroRateRoll) + "," +
+                 String(gyroRatePitch) + "," +
+                 String(RateYaw) + "," +
+                 String(AccX) + "," +
+                 String(AccY) + "," +
+                 String(AccZ) + "," +
+                 String(tau_x) + "," +
+                 String(tau_y) + "," +
+                 String(tau_z) + "," +
+                 String(AngleRoll) + "," +
+                 String(AnglePitch) + "," +
+                 String(error_phi) + "," +
+                 String(error_theta) + "," +
+                 String(InputThrottle) + "," +
+                 String(DesiredAngleRoll) + "," +
+                 String(DesiredAnglePitch) + "," +
+                 String(DesiredRateYaw) + "," +
+                 String(MotorInput1) + "," +
+                 String(MotorInput2) + "," +
+                 String(MotorInput3) + "," +
+                 String(MotorInput4) + "," +
+                 String(T) + "," +
+                 String(modoActual);
+    webSocket.sendTXT(msg);
 }
 
 void changeMode(int newMode)
@@ -378,50 +352,37 @@ void setup()
     preferences.putInt("modo", modoActual); // Guardar modo espera en la memoria
     ledState = preferences.getBool("ledState", false);
 
-    setCpuFrequencyMhz(240); // Aumentar frecuencia de CPU para mejor rendimiento
+    setCpuFrequencyMhz(160);
     setupMPU();
+
     if (!setup_wifi())
     {
         Serial.println("Reiniciando por fallo WiFi...");
         delay(1000);
         ESP.restart();
     }
-    // Test TCP solo después de WiFi OK
-    WiFiClient testClient;
-    if (testClient.connect(websocket_server, websocket_port))
-    {
-        Serial.println("✅ Conexión TCP exitosa al backend");
-        testClient.stop();
-    }
-    else
-    {
-        Serial.println("❌ No se pudo conectar por TCP al backend");
-    }
-    btStop();
 
-    // Configurar WebSocket antes de crear tareas
+    btStop();
     connectToWebSocket();
 
-    // Configurar watchdog con más tiempo
-    esp_task_wdt_init(30, true); // Aumentar tiempo del watchdog a 30 segundos
+    esp_task_wdt_init(20, true); // Aumentar tiempo del watchdog a 20 segundos
 
     // Crear el mutex antes de iniciar las tareas
     sensorMutex = xSemaphoreCreateMutex();
     setupMotores();
-
     xTaskCreatePinnedToCore(
         TaskControlCode,
         "TaskControl",
-        12000, // Aumentar stack size
+        10000,
         NULL,
-        3, // Prioridad más alta para el control
+        2, // Prioridad más alta para el control
         &TaskControl,
         0); // Núcleo 0 para control en tiempo real
 
     xTaskCreatePinnedToCore(
         TaskComunicacionCode,
         "TaskComunicacion",
-        18000, // Aumentar stack size
+        15000,
         NULL,
         1, // Prioridad menor para comunicación
         &TaskComunicacion,
