@@ -103,73 +103,47 @@ void gyro_signals(void)
   // Actualización del filtro de Kalman para cada eje
   AngleRoll = Kalman_filter(kalmanRoll, AngleRoll_est, gyroRateRoll_local, dt);
   AnglePitch = Kalman_filter(kalmanPitch, AnglePitch_est, gyroRatePitch_local, dt);
+
+  // Integración de la tasa de Yaw para obtener el ángulo (¡puede haber drift!)
+  yaw += RateYaw * dt;
+  yaw = 0.98 * yaw + 0.02 * (RateYaw * dt);
+  AngleYaw = Kalman_filter(kalmanYaw, yaw, RateYaw, dt);
 }
 
 void loop_yaw()
 {
-  // Primero actualizar los valores de roll y pitch
-  gyro_signals();
-
-  // --- YAW desde QMC5883L ---
   compass.read();
-  int heading = compass.getAzimuth();
-  int yaw = heading - yawOffset;
+  float heading = compass.getAzimuth() * PI / 180.0; // Ángulo Yaw absoluto del magnetómetro (convertido a radianes)
 
-  if (yaw > 180)
-    yaw -= 360;
-  if (yaw < -180)
-    yaw += 360;
+  // Normalizar el heading entre 0 y 2*PI
+  if (heading < 0)
+    heading += 2 * PI;
+  if (heading > 2 * PI)
+    heading -= 2 * PI;
 
-  // Actualiza AngleYaw directamente con el yaw calculado
-  AngleYaw = yaw;
+  // Fusión sensor con filtro complementario - más peso al magnetómetro para corregir drift
+  // AngleYaw = 0.50 * (yaw + RateYaw * dt) + 0.50 * heading;
+}
 
-  // --- PITCH y ROLL desde MPU6050 ---
-  int16_t ax, ay, az;
-  mpu.getAcceleration(&ax, &ay, &az);
+void setupMPU()
+{
+  Serial.begin(115200);
+  Wire.begin(21, 22); // SDA = GPIO21, SCL = GPIO22
 
-  // Usar el yaw calculado del magnetómetro
-  float gyroYaw = AngleYaw + RateYaw * dt;
+  // Inicializar magnetómetro
+  compass.init();
+  Serial.println("Inicializando magnetómetro...");
 
-  // Detectar interferencia
-  int x = compass.getX(), y = compass.getY(), z = compass.getZ();
-  float magMagnitude = sqrt(x * x + y * y + z * z);
+  // Verificar si el magnetómetro responde
+  compass.read();
 
-  // Suavizado
-  yawHistory[yawIndex] = AngleYaw;
-  yawIndex = (yawIndex + 1) % YAW_FILTER_SIZE;
-  float smoothedYaw = 0;
-  for (int i = 0; i < YAW_FILTER_SIZE; i++)
-    smoothedYaw += yawHistory[i];
-  float Yaw = smoothedYaw / YAW_FILTER_SIZE;
+  mpu.initialize();
+  // Calibración automática al inicio
+  compass.setCalibration(-1767, 1345, -1503, 1199, -1325, 1567);
+  delay(2000); // Esperar estabilización
 
-  float yawOriginal = Yaw; // Guardar valor original para debug
-
-  // Solo aplicar compensación si hay inclinación real (umbral configurable)
-  if (abs(AngleRoll) > compensationThreshold || abs(AnglePitch) > compensationThreshold)
-  {
-
-    // Compensación para Roll
-    if (AngleRoll < -compensationThreshold) // Roll negativo significativo
-    {
-      Yaw += AngleRoll/10;
-    }
-    else if (AngleRoll > compensationThreshold) // Roll positivo significativo
-    {
-      Yaw += 0.02 * AngleRoll;
-    }
-
-    // Compensación para Pitch
-    if (AnglePitch < -compensationThreshold) // Pitch negativo significativo
-    {
-      Yaw -= 0.3 * AnglePitch;
-    }
-    else if (AnglePitch > compensationThreshold) // Pitch positivo significativo
-    {
-      Yaw = 0.5 * AnglePitch;
-    }
-  }
-
-  AngleYaw = Yaw;
+  calibrateSensors();
+  Serial.println("Calibración completada.");
 }
 
 void setupMPU()
