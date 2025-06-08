@@ -14,14 +14,14 @@ bool mpu_ready = false;
 
 // === Matrices LQR ===
 const float Ki_at[3][3] = {
-    {8.0, 0, 0},
-    {0, 8.0, 0},
-    {0, 0, 0.004}};
+    {0.6, 0, 0},
+    {0, 0.6, 0},
+    {0, 0, 0.1}};
 
 const float Kc_at[3][6] = {
-    {5.3, 0, 0, 3.6, 0, 0},
-    {0, 5.3, 0, 0, 3.6, 0},
-    {0, 0, 4.8, 0, 0, 2.1}};
+    {5.5, 0, 0, 3.6, 0, 0},
+    {0, 5.5, 0, 0, 3.6, 0},
+    {0, 0, 5.3, 0, 0, 1.6}};
 
 // === Matrices LQR para altitud ===
 const float Ki_alt = 31.6228;
@@ -39,8 +39,6 @@ void setup_pilote_mode()
 
 void loop_pilote_mode(float dt)
 {
-    InputThrottle = 1500;
-
     // Estado del sistema
     float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
     float x_i[3] = {integral_phi, integral_theta, integral_psi};
@@ -58,6 +56,8 @@ void loop_pilote_mode(float dt)
     x_i[0] += error_phi * dt;
     x_i[1] += error_theta * dt;
     x_i[2] += error_psi * dt;
+
+    InputThrottle = 1000 * dt;
 
     if (InputThrottle > 1020)
     {

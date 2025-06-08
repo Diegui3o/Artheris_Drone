@@ -40,8 +40,8 @@ WebSocketsClient webSocket;
 unsigned long lastConnectionAttempt = 0;
 const long connectionInterval = 5000; // Intentar reconectar cada 5 segundos
 unsigned long lastSendTime = 0;
-const int sendInterval = 10; // 5ms (200Hz)
-char txBuffer[200];          // Buffer para mensajes CSV;
+const int sendInterval = 10;
+char txBuffer[200];
 #define BUFFER_SIZE 60
 struct SensorData
 {
@@ -226,15 +226,14 @@ void TaskControlCode(void *pvParameters)
             default:
                 break;
             }
-        }
-        // Ejecutar loop solo si el modo es piloto o manual
+        } // Ejecutar loop solo si el modo es piloto o manual
         if (modoActual == 0 || modoActual == 2)
         {
             static uint32_t last_time = 0;
             float dt = (micros() - last_time) / 1e6;
-            if (dt >= 0.04)
+            if (dt >= 0.04) // 25Hz para control
             {
-                if (xSemaphoreTake(sensorMutex, portMAX_DELAY) == pdTRUE)
+                if (xSemaphoreTake(sensorMutex, 0) == pdTRUE) // No bloquear
                 {
                     if (modoActual == 0)
                         loop_pilote_mode(dt);
@@ -245,7 +244,7 @@ void TaskControlCode(void *pvParameters)
                 last_time = micros();
             }
         }
-        vTaskDelay(1 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
@@ -263,26 +262,17 @@ void TaskComunicacionCode(void *pvParameters)
             lastConnectionAttempt = millis();
             connectToWebSocket();
         }
-
-        // Lectura de sensores
-        if (xSemaphoreTake(sensorMutex, 2 / portTICK_PERIOD_MS) == pdTRUE)
+        if (xSemaphoreTake(sensorMutex, 0) == pdTRUE)
         {
-            loop_yaw();
+            gyro_signals();
             xSemaphoreGive(sensorMutex);
-        }
-
-        // Envío de datos a intervalo fijo
-        unsigned long currentTime = millis();
-        if (currentTime - lastSendTime >= sendInterval)
+        } // Envío de datos por WebSocket (periódico, independiente)
+        if (webSocket.isConnected() && millis() - lastSendTime >= sendInterval)
         {
-            lastSendTime = currentTime;
-            if (webSocket.isConnected())
-            {
-                prepareAndSendMessage();
-            }
+            prepareAndSendMessage();
+            lastSendTime = millis();
         }
-
-        vTaskDelay(1 / portTICK_PERIOD_MS); // Reducir delay
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
@@ -316,6 +306,13 @@ void prepareAndSendMessage()
                  String(T) + "," +
                  String(modoActual);
     webSocket.sendTXT(msg);
+
+    // Debug: mostrar que se están enviando datos cada 10 segundos
+    static unsigned long lastDebugTime = 0;
+    if (millis() - lastDebugTime > 10000)
+    {
+        lastDebugTime = millis();
+    }
 }
 
 void changeMode(int newMode)
@@ -365,7 +362,7 @@ void setup()
     btStop();
     connectToWebSocket();
 
-    esp_task_wdt_init(20, true); // Aumentar tiempo del watchdog a 20 segundos
+    esp_task_wdt_init(30, true); // Aumentar tiempo del watchdog a 30 segundos
 
     // Crear el mutex antes de iniciar las tareas
     sensorMutex = xSemaphoreCreateMutex();

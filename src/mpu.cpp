@@ -146,24 +146,6 @@ void setupMPU()
   Serial.println("Calibración completada.");
 }
 
-void setupMPU()
-{
-  Serial.begin(115200);
-  Wire.begin(21, 22); // SDA = GPIO21, SCL = GPIO22
-
-  compass.init();
-  mpu.initialize();
-  // Calibración automática al inicio
-  compass.setCalibration(-1767, 1345, -1503, 1199, -1325, 1567);
-  delay(2000); // Esperar estabilización
-  calibrateSensors();
-  compass.read();
-  yawOffset = compass.getAzimuth(); // Yaw inicial como referencia
-  Serial.print("Calibrado. Dirección inicial = ");
-  Serial.print(yawOffset);
-  Serial.println("° (ahora es yaw = 0°)");
-}
-
 // === CALIBRACIÓN DEL MPU6050 ===
 void calibrateSensors()
 {
