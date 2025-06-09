@@ -33,31 +33,48 @@ void setup_pilote_mode()
     pinMode(pinLed, OUTPUT);
     Serial.begin(115200);
     Serial.println("Iniciando modo pilote...");
+    InputThrottle = 1000;
     delay(100);
     Serial.println("Setup completado.");
 }
 
 void loop_pilote_mode(float dt)
 {
+    // Inicializar throttle solo una vez al principio
+    static bool throttle_initialized = false;
+    if (!throttle_initialized)
+    {
+        InputThrottle = 1000;
+        throttle_initialized = true;
+    }
+
     // Estado del sistema
     float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
     float x_i[3] = {integral_phi, integral_theta, integral_psi};
+
+    // Calcular errores ANTES del control LQR
+    error_phi = phi_ref - x_c[0];
+    error_theta = theta_ref - x_c[1];
+    error_psi = psi_ref - x_c[2];
 
     // Control LQR
     tau_x = Ki_at[0][0] * x_i[0] + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
     tau_y = Ki_at[1][1] * x_i[1] + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
     tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi - Kc_at[2][5] * x_c[5];
 
-    error_phi = phi_ref - x_c[0];
-    error_theta = theta_ref - x_c[1];
-    error_psi = psi_ref - x_c[2];
-
     // Actualizar integrales
     x_i[0] += error_phi * dt;
     x_i[1] += error_theta * dt;
     x_i[2] += error_psi * dt;
 
-    InputThrottle = 1000 * dt;
+    if (InputThrottle < 1700)
+    {
+        InputThrottle += 2.0;
+        if (InputThrottle > 1700)
+        {
+            InputThrottle = 1650;
+        }
+    }
 
     if (InputThrottle > 1020)
     {
