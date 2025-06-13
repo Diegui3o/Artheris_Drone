@@ -31,10 +31,10 @@ extern const int mot2_pin;
 extern const int mot3_pin;
 extern const int mot4_pin;
 
-// Variables de estado
-extern volatile float phi_ref, theta_ref, psi_ref; // Ángulos de referencia
+// Variables de estado - OPTIMIZADO: quitado volatile innecesario
+extern float phi_ref, theta_ref, psi_ref; // Solo referencias locales - OPTIMIZADO
 
-extern volatile float integral_phi, integral_theta, integral_psi;
+extern float integral_phi, integral_theta, integral_psi; // Solo integrales locales - OPTIMIZADO
 
 // Variables para la calibración
 extern int buffersize;    // Cantidad de lecturas para promediar
@@ -47,8 +47,8 @@ extern int ax_offset, ay_offset, az_offset, gx_offset, gy_offset, gz_offset;
 
 extern volatile float AngleRoll_est;
 extern volatile float AnglePitch_est;
-extern volatile float tau_x, tau_y, tau_z;
-extern volatile float error_phi, error_theta, error_psi;
+extern float tau_x, tau_y, tau_z;
+extern float error_phi, error_theta, error_psi;
 
 extern volatile uint32_t current_time;
 extern volatile uint32_t last_channel_1;
@@ -75,20 +75,21 @@ extern int ThrottleIdle;
 extern int ThrottleCutOff;
 
 // Kalman filters for angle mode
-extern volatile float AccX, AccY, AccZ;
-extern volatile float AngleRoll, AnglePitch, AngleYaw;
-extern volatile float GyroXdps, GyroYdps, GyroZdps;
-extern volatile float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
-extern volatile float InputRoll, InputThrottle, InputPitch, InputYaw;
-extern volatile float DesiredAngleRoll, DesiredAnglePitch;
-extern volatile float ErrorAngleRoll, ErrorAnglePitch;
-extern volatile float PrevErrorAngleRoll, PrevErrorAnglePitch;
-extern volatile float PrevItermAngleRoll, PrevItermAnglePitch;
+extern volatile float AccX, AccY, AccZ;                // Mantener volatile - compartido entre tareas
+extern volatile float AngleRoll, AnglePitch, AngleYaw; // Mantener volatile - compartido entre tareas
+extern float GyroXdps, GyroYdps, GyroZdps;             // OPTIMIZADO: solo uso local
+// OPTIMIZADO: quitado volatile innecesario para mejor rendimiento
+extern float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw; // Solo cálculos locales
+extern float InputRoll, InputThrottle, InputPitch, InputYaw;    // Solo entrada de control
+extern float DesiredAngleRoll, DesiredAnglePitch;               // Solo cálculos locales
+extern float ErrorAngleRoll, ErrorAnglePitch;                   // Solo cálculos locales
+extern float PrevErrorAngleRoll, PrevErrorAnglePitch;           // Solo cálculos locales
+extern float PrevItermAngleRoll, PrevItermAnglePitch;           // Solo cálculos locales
 
 extern float complementaryAngleRoll;
 extern float complementaryAnglePitch;
 
-extern volatile float MotorInput1, MotorInput2, MotorInput3, MotorInput4;
+extern float MotorInput1, MotorInput2, MotorInput3, MotorInput4; // Solo salida de control
 
 // Matriz de covarianza del error
 extern float dt; // Paso de tiempo (ajustar según la frecuencia de muestreo, variable)

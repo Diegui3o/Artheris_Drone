@@ -22,8 +22,8 @@ int ESCfreq = 500;
 
 volatile float AngleRoll_est;
 volatile float AnglePitch_est;
-volatile float tau_x, tau_y, tau_z;
-volatile float error_phi, error_theta, error_psi;
+float tau_x, tau_y, tau_z;
+float error_phi, error_theta, error_psi;
 
 int buffersize = 1000; // Cantidad de lecturas para promediar
 int acel_deadzone = 8; // Zona muerta del acelerómetro
@@ -71,29 +71,29 @@ const int channel_6_pin = 26;
 int ThrottleIdle = 1170;
 int ThrottleCutOff = 1000;
 
-// Kalman filters for angle mode
-volatile float AccX, AccY, AccZ;
-volatile float AngleRoll = 0, AnglePitch = 0, AngleYaw = 0;
-volatile float GyroXdps, GyroYdps, GyroZdps;
-volatile float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
-volatile float InputRoll, InputThrottle, InputPitch, InputYaw;
-volatile float DesiredAngleRoll, DesiredAnglePitch;
-volatile float ErrorAngleRoll, ErrorAnglePitch;
-volatile float PrevErrorAngleRoll, PrevErrorAnglePitch;
-volatile float PrevItermAngleRoll, PrevItermAnglePitch;
+// Kalman filters for angle mode - OPTIMIZADO: quitado volatile innecesario
+volatile float AccX, AccY, AccZ;                            // Mantener volatile - compartido entre tareas
+volatile float AngleRoll = 0, AnglePitch = 0, AngleYaw = 0; // Mantener volatile - compartido entre tareas
+float GyroXdps, GyroYdps, GyroZdps;                         // OPTIMIZADO: solo uso local
+float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;    // OPTIMIZADO: solo cálculos locales
+float InputRoll, InputThrottle, InputPitch, InputYaw;       // OPTIMIZADO: solo entrada de control
+float DesiredAngleRoll, DesiredAnglePitch;                  // OPTIMIZADO: solo cálculos locales
+float ErrorAngleRoll, ErrorAnglePitch;                      // OPTIMIZADO: solo cálculos locales
+float PrevErrorAngleRoll, PrevErrorAnglePitch;              // OPTIMIZADO: solo cálculos locales
+float PrevItermAngleRoll, PrevItermAnglePitch;              // OPTIMIZADO: solo cálculos locales
 
 float complementaryAngleRoll = 0.0f;
 float complementaryAnglePitch = 0.0f;
 
-volatile float MotorInput1, MotorInput2, MotorInput3, MotorInput4;
+float MotorInput1, MotorInput2, MotorInput3, MotorInput4; // OPTIMIZADO: solo salida de control
 
-// Variables de estado
-volatile float phi_ref = 0.0;
-volatile float theta_ref = 0.0;
-volatile float psi_ref = 1.0;
-volatile float integral_phi;
-volatile float integral_theta;
-volatile float integral_psi;
+// Variables de estado - OPTIMIZADO: quitado volatile innecesario
+float phi_ref = 0.0;   // Solo referencias locales - OPTIMIZADO
+float theta_ref = 0.0; // Solo referencias locales - OPTIMIZADO
+float psi_ref = 1.0;   // Solo referencias locales - OPTIMIZADO
+float integral_phi;    // Solo integrales locales - OPTIMIZADO
+float integral_theta;  // Solo integrales locales - OPTIMIZADO
+float integral_psi;    // Solo integrales locales - OPTIMIZADO
 
 float accAngleRoll;  // Ángulo de roll (grados)
 float accAnglePitch; // Ángulo de pitch (grados)
@@ -118,7 +118,7 @@ float residual_history[window_size] = {0};
 int residual_index = 0;
 float c_threshold = 0.01;
 
-float dt = 0.04;        // Paso de tiempo (ajustar según la frecuencia de muestreo)
+float dt = 0.09;        // Paso de tiempo (ajustar según la frecuencia de muestreo)
 float Q_angle = 0.001f; // Covarianza del ruido del proceso (ángulo)
 float Q_gyro = 0.003;   // Covarianza del ruido del proceso (giroscopio)
 float R_angle = 0.03;   // Covarianza del ruido de medición (acelerómetro)

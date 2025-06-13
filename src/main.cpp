@@ -15,7 +15,7 @@ SemaphoreHandle_t sensorMutex = NULL;
 // ================= CONFIGURACIÓN =================
 const char *ssid = "FAMILIAMYM";
 const char *password = "mm221418";
-const char *websocket_server = "192.168.1.11";
+const char *websocket_server = "192.168.1.27";
 const int websocket_port = 3003;
 const char *websocket_path = "/esp32";
 
@@ -226,22 +226,38 @@ void TaskControlCode(void *pvParameters)
             default:
                 break;
             }
-        } // Ejecutar loop solo si el modo es piloto o manual
+        }
+        // Lectura de sensores SIEMPRE ACTIVA a 25Hz independiente del modo
+        {
+            static uint32_t sensor_last_time = 0;
+            float sensor_dt = (micros() - sensor_last_time) / 1e6;
+            if (sensor_dt >= 0.04) // 25Hz para sensores SIEMPRE
+            {
+                if (xSemaphoreTake(sensorMutex, 0) == pdTRUE) // No bloquear
+                {
+                    gyro_signals(); // Leer sensores siempre a 25Hz
+                    xSemaphoreGive(sensorMutex);
+                }
+                sensor_last_time = micros();
+            }
+        }
+
+        // Ejecutar loop solo si el modo es piloto o manual
         if (modoActual == 0 || modoActual == 2)
         {
-            static uint32_t last_time = 0;
-            float dt = (micros() - last_time) / 1e6;
-            if (dt >= 0.04) // 25Hz para control
+            static uint32_t control_last_time = 0;
+            float control_dt = (micros() - control_last_time) / 1e6;
+            if (control_dt >= 0.04) // 25Hz para control
             {
                 if (xSemaphoreTake(sensorMutex, 0) == pdTRUE) // No bloquear
                 {
                     if (modoActual == 0)
-                        loop_pilote_mode(dt);
+                        loop_pilote_mode(control_dt);
                     else if (modoActual == 2)
-                        loop_manual_mode(dt);
+                        loop_manual_mode(control_dt);
                     xSemaphoreGive(sensorMutex);
                 }
-                last_time = micros();
+                control_last_time = micros();
             }
         }
         vTaskDelay(pdMS_TO_TICKS(1));
@@ -262,11 +278,8 @@ void TaskComunicacionCode(void *pvParameters)
             lastConnectionAttempt = millis();
             connectToWebSocket();
         }
-        if (xSemaphoreTake(sensorMutex, 0) == pdTRUE)
-        {
-            gyro_signals();
-            xSemaphoreGive(sensorMutex);
-        } // Envío de datos por WebSocket (periódico, independiente)
+
+        // Envío de datos por WebSocket (periódico, independiente)
         if (webSocket.isConnected() && millis() - lastSendTime >= sendInterval)
         {
             prepareAndSendMessage();
@@ -306,13 +319,6 @@ void prepareAndSendMessage()
                  String(T) + "," +
                  String(modoActual);
     webSocket.sendTXT(msg);
-
-    // Debug: mostrar que se están enviando datos cada 10 segundos
-    static unsigned long lastDebugTime = 0;
-    if (millis() - lastDebugTime > 10000)
-    {
-        lastDebugTime = millis();
-    }
 }
 
 void changeMode(int newMode)

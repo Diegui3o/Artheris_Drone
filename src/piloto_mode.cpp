@@ -14,13 +14,13 @@ bool mpu_ready = false;
 
 // === Matrices LQR ===
 const float Ki_at[3][3] = {
-    {0.6, 0, 0},
-    {0, 0.6, 0},
-    {0, 0, 0.1}};
+    {1, 0, 0},
+    {0, 1, 0},
+    {0, 0, 3}};
 
 const float Kc_at[3][6] = {
-    {5.5, 0, 0, 3.6, 0, 0},
-    {0, 5.5, 0, 0, 3.6, 0},
+    {8.1, 0, 0, 2.5, 0, 0},
+    {0, 8.1, 0, 0, 2.5, 0},
     {0, 0, 5.3, 0, 0, 1.6}};
 
 // === Matrices LQR para altitud ===
@@ -33,7 +33,6 @@ void setup_pilote_mode()
     pinMode(pinLed, OUTPUT);
     Serial.begin(115200);
     Serial.println("Iniciando modo pilote...");
-    InputThrottle = 1000;
     delay(100);
     Serial.println("Setup completado.");
 }
@@ -44,7 +43,7 @@ void loop_pilote_mode(float dt)
     static bool throttle_initialized = false;
     if (!throttle_initialized)
     {
-        InputThrottle = 1000;
+        InputThrottle = 1300;
         throttle_initialized = true;
     }
 
@@ -57,7 +56,6 @@ void loop_pilote_mode(float dt)
     error_theta = theta_ref - x_c[1];
     error_psi = psi_ref - x_c[2];
 
-    // Control LQR
     tau_x = Ki_at[0][0] * x_i[0] + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
     tau_y = Ki_at[1][1] * x_i[1] + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
     tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi - Kc_at[2][5] * x_c[5];
@@ -67,12 +65,12 @@ void loop_pilote_mode(float dt)
     x_i[1] += error_theta * dt;
     x_i[2] += error_psi * dt;
 
-    if (InputThrottle < 1700)
+    if (InputThrottle < 1000)
     {
         InputThrottle += 2.0;
         if (InputThrottle > 1700)
         {
-            InputThrottle = 1650;
+            InputThrottle = 1600;
         }
     }
 
