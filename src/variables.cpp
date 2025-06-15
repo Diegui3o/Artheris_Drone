@@ -95,6 +95,15 @@ float integral_phi;    // Solo integrales locales - OPTIMIZADO
 float integral_theta;  // Solo integrales locales - OPTIMIZADO
 float integral_psi;    // Solo integrales locales - OPTIMIZADO
 
+// === Variables para control avanzado ===
+// Modo deslizante
+float S_phi = 0, S_theta = 0; // Superficies deslizantes
+float lambda_sliding = 0.5;   // Parámetro de deslizamiento
+
+// Feedforward
+float ff_phi = 0, ff_theta = 0, ff_psi = 0; // Términos feedforward
+float prev_phi_ref = 0, prev_theta_ref = 0; // Referencias anteriores para derivada
+
 float accAngleRoll;  // Ángulo de roll (grados)
 float accAnglePitch; // Ángulo de pitch (grados)
 float gyroRateRoll;

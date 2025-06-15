@@ -75,21 +75,65 @@ void encenderMotores(int speed)
     mot4.writeMicroseconds(speed);
 }
 
-// === CONTROL A LOS MOTORES ===
+// === CONTROL A LOS MOTORES CON SATURACION COLECTIVA ===
 void applyControl(float tau_x, float tau_y, float tau_z)
 {
-    float pwm1 = InputThrottle - tau_x - tau_y - tau_z;
-    float pwm2 = InputThrottle - tau_x + tau_y + tau_z;
-    float pwm3 = InputThrottle + tau_x + tau_y - tau_z;
-    float pwm4 = InputThrottle + tau_x - tau_y + tau_z;
+    float f[4];
+    f[0] = InputThrottle - tau_x - tau_y - tau_z; // pwm1
+    f[1] = InputThrottle - tau_x + tau_y + tau_z; // pwm2
+    f[2] = InputThrottle + tau_x + tau_y - tau_z; // pwm3
+    f[3] = InputThrottle + tau_x - tau_y + tau_z; // pwm4
 
-    // Limitar valores PWM
-    MotorInput1 = constrain(pwm1, 1000, 2000);
-    MotorInput2 = constrain(pwm2, 1000, 2000);
-    MotorInput3 = constrain(pwm3, 1000, 2000);
-    MotorInput4 = constrain(pwm4, 1000, 2000);
+    const float f_min = 1000.0;
+    const float f_max = 2000.0;
+    bool saturado = false;
 
-    // Enviar señales
+    for (int i = 0; i < 4; i++)
+    {
+        if (f[i] < f_min || f[i] > f_max)
+        {
+            saturado = true;
+            break;
+        }
+    }
+
+    if (saturado)
+    {
+        float max_violation = 0;
+        int j = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            float violation = 0;
+            if (f[i] > f_max)
+                violation = f[i] - f_max;
+            else if (f[i] < f_min)
+                violation = f_min - f[i];
+
+            if (violation > max_violation)
+            {
+                max_violation = violation;
+                j = i;
+            }
+        }
+
+        float gamma = 1.0;
+        if (f[j] > f_max)
+            gamma = f_max / f[j];
+        else if (f[j] < f_min)
+            gamma = f_min / f[j];
+
+        for (int i = 0; i < 4; i++)
+        {
+            f[i] *= gamma;
+        }
+    }
+
+    // Recorte final por seguridad
+    MotorInput1 = constrain(f[0], f_min, f_max);
+    MotorInput2 = constrain(f[1], f_min, f_max);
+    MotorInput3 = constrain(f[2], f_min, f_max);
+    MotorInput4 = constrain(f[3], f_min, f_max);
+
     mot1.writeMicroseconds(round(MotorInput1));
     mot2.writeMicroseconds(round(MotorInput2));
     mot3.writeMicroseconds(round(MotorInput3));

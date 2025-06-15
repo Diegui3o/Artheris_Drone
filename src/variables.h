@@ -36,6 +36,15 @@ extern float phi_ref, theta_ref, psi_ref; // Solo referencias locales - OPTIMIZA
 
 extern float integral_phi, integral_theta, integral_psi; // Solo integrales locales - OPTIMIZADO
 
+// === Variables para control avanzado ===
+// Modo deslizante
+extern float S_phi, S_theta; // Superficies deslizantes
+extern float lambda_sliding; // Parámetro de deslizamiento
+
+// Feedforward
+extern float ff_phi, ff_theta, ff_psi;     // Términos feedforward
+extern float prev_phi_ref, prev_theta_ref; // Referencias anteriores para derivada
+
 // Variables para la calibración
 extern int buffersize;    // Cantidad de lecturas para promediar
 extern int acel_deadzone; // Zona muerta del acelerómetro
