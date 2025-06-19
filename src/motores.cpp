@@ -85,7 +85,7 @@ void applyControl(float tau_x, float tau_y, float tau_z)
     f[3] = InputThrottle + tau_x - tau_y + tau_z; // pwm4
 
     const float f_min = 1000.0;
-    const float f_max = 2000.0;
+    const float f_max = 1990.0;
     bool saturado = false;
 
     for (int i = 0; i < 4; i++)

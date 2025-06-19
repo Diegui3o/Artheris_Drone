@@ -88,12 +88,12 @@ extern volatile float AccX, AccY, AccZ;                // Mantener volatile - co
 extern volatile float AngleRoll, AnglePitch, AngleYaw; // Mantener volatile - compartido entre tareas
 extern float GyroXdps, GyroYdps, GyroZdps;             // OPTIMIZADO: solo uso local
 // OPTIMIZADO: quitado volatile innecesario para mejor rendimiento
-extern float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw; // Solo cálculos locales
-extern float InputRoll, InputThrottle, InputPitch, InputYaw;    // Solo entrada de control
-extern float DesiredAngleRoll, DesiredAnglePitch;               // Solo cálculos locales
-extern float ErrorAngleRoll, ErrorAnglePitch;                   // Solo cálculos locales
-extern float PrevErrorAngleRoll, PrevErrorAnglePitch;           // Solo cálculos locales
-extern float PrevItermAngleRoll, PrevItermAnglePitch;           // Solo cálculos locales
+extern int DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
+extern int InputRoll, InputThrottle, InputPitch, InputYaw;
+extern int DesiredAngleRoll, DesiredAnglePitch, DesiredAngleYaw;
+extern float ErrorAngleRoll, ErrorAnglePitch;
+extern float PrevErrorAngleRoll, PrevErrorAnglePitch;
+extern float PrevItermAngleRoll, PrevItermAnglePitch;
 
 extern float complementaryAngleRoll;
 extern float complementaryAnglePitch;

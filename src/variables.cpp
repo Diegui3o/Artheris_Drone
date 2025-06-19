@@ -75,25 +75,25 @@ int ThrottleCutOff = 1000;
 volatile float AccX, AccY, AccZ;                            // Mantener volatile - compartido entre tareas
 volatile float AngleRoll = 0, AnglePitch = 0, AngleYaw = 0; // Mantener volatile - compartido entre tareas
 float GyroXdps, GyroYdps, GyroZdps;                         // OPTIMIZADO: solo uso local
-float DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;    // OPTIMIZADO: solo cálculos locales
-float InputRoll, InputThrottle, InputPitch, InputYaw;       // OPTIMIZADO: solo entrada de control
-float DesiredAngleRoll, DesiredAnglePitch;                  // OPTIMIZADO: solo cálculos locales
-float ErrorAngleRoll, ErrorAnglePitch;                      // OPTIMIZADO: solo cálculos locales
-float PrevErrorAngleRoll, PrevErrorAnglePitch;              // OPTIMIZADO: solo cálculos locales
-float PrevItermAngleRoll, PrevItermAnglePitch;              // OPTIMIZADO: solo cálculos locales
+int DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
+int InputRoll, InputThrottle, InputPitch, InputYaw;
+int DesiredAngleRoll, DesiredAnglePitch, DesiredAngleYaw;
+float ErrorAngleRoll, ErrorAnglePitch;         // OPTIMIZADO: solo cálculos locales
+float PrevErrorAngleRoll, PrevErrorAnglePitch; // OPTIMIZADO: solo cálculos locales
+float PrevItermAngleRoll, PrevItermAnglePitch; // OPTIMIZADO: solo cálculos locales
 
 float complementaryAngleRoll = 0.0f;
 float complementaryAnglePitch = 0.0f;
 
 float MotorInput1, MotorInput2, MotorInput3, MotorInput4; // OPTIMIZADO: solo salida de control
 
-// Variables de estado - OPTIMIZADO: quitado volatile innecesario
-float phi_ref = 0.0;   // Solo referencias locales - OPTIMIZADO
-float theta_ref = 0.0; // Solo referencias locales - OPTIMIZADO
-float psi_ref = 1.0;   // Solo referencias locales - OPTIMIZADO
-float integral_phi;    // Solo integrales locales - OPTIMIZADO
-float integral_theta;  // Solo integrales locales - OPTIMIZADO
-float integral_psi;    // Solo integrales locales - OPTIMIZADO
+// Variables de estado
+float phi_ref = 0.0;  
+float theta_ref = 0.0;
+float psi_ref = 0.0;  
+float integral_phi;   
+float integral_theta; 
+float integral_psi;   
 
 // === Variables para control avanzado ===
 // Modo deslizante
@@ -127,7 +127,7 @@ float residual_history[window_size] = {0};
 int residual_index = 0;
 float c_threshold = 0.01;
 
-float dt = 0.09;        // Paso de tiempo (ajustar según la frecuencia de muestreo)
+float dt = 0.009;       // Paso de tiempo (ajustar según la frecuencia de muestreo)
 float Q_angle = 0.001f; // Covarianza del ruido del proceso (ángulo)
 float Q_gyro = 0.003;   // Covarianza del ruido del proceso (giroscopio)
 float R_angle = 0.03;   // Covarianza del ruido de medición (acelerómetro)

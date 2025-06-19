@@ -15,7 +15,7 @@ SemaphoreHandle_t sensorMutex = NULL;
 // ================= CONFIGURACIÓN =================
 const char *ssid = "FAMILIAMYM";
 const char *password = "mm221418";
-const char *websocket_server = "192.168.1.27";
+const char *websocket_server = "192.168.1.39";
 const int websocket_port = 3003;
 const char *websocket_path = "/esp32";
 
@@ -40,9 +40,9 @@ WebSocketsClient webSocket;
 unsigned long lastConnectionAttempt = 0;
 const long connectionInterval = 5000; // Intentar reconectar cada 5 segundos
 unsigned long lastSendTime = 0;
-const int sendInterval = 10;
-char txBuffer[200];
-#define BUFFER_SIZE 60
+const int sendInterval = 6;
+char txBuffer[400];
+#define BUFFER_SIZE 80
 struct SensorData
 {
     float roll, pitch, yaw;
@@ -231,7 +231,7 @@ void TaskControlCode(void *pvParameters)
         {
             static uint32_t sensor_last_time = 0;
             float sensor_dt = (micros() - sensor_last_time) / 1e6;
-            if (sensor_dt >= 0.04) // 25Hz para sensores SIEMPRE
+            if (sensor_dt >= 0.001)
             {
                 if (xSemaphoreTake(sensorMutex, 0) == pdTRUE) // No bloquear
                 {
@@ -247,7 +247,7 @@ void TaskControlCode(void *pvParameters)
         {
             static uint32_t control_last_time = 0;
             float control_dt = (micros() - control_last_time) / 1e6;
-            if (control_dt >= 0.04) // 25Hz para control
+            if (control_dt >= 0.001)
             {
                 if (xSemaphoreTake(sensorMutex, 0) == pdTRUE) // No bloquear
                 {

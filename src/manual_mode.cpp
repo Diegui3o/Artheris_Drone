@@ -8,6 +8,10 @@
 #include "manual_mode.h"
 #include "motores.h"
 
+// Límites de integral por eje (ajustados a las ganancias actuales)
+#define MAX_INTEGRAL_ROLL_PITCH 100.0f // Para Ki=0.6: permite τ máximo de ~60
+#define MAX_INTEGRAL_YAW 300.0f        // Para Ki=0.1: permite τ máximo de ~30
+
 // === Matrices LQR ===
 const float Ki_at[3][3] = {
     {0.6, 0, 0},
@@ -129,33 +133,33 @@ void setup_manual_mode()
 
 void loop_manual_mode(float dt)
 {
-
   DesiredAngleRoll = 0.1 * (ReceiverValue[0] - 1500);
   DesiredAnglePitch = 0.1 * (ReceiverValue[1] - 1500);
   InputThrottle = ReceiverValue[2];
-  DesiredRateYaw = 0.15 * (ReceiverValue[3] - 1500);
+  DesiredAngleYaw = 0.15 * (ReceiverValue[3] - 1500);
 
-  // Estado del sistema
+  // 1. PRIMERO: Actualizar las referencias
+  phi_ref = DesiredAngleRoll / 2.5;
+  theta_ref = DesiredAnglePitch / 2.5;
+  psi_ref = DesiredAngleYaw / 2.5;
+
+  // 2. SEGUNDO: Estado del sistema
   float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
-  float x_i[3] = {integral_phi, integral_theta, integral_psi};
 
-  // Control LQR
-  tau_x = Ki_at[0][0] * x_i[0] + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
-  tau_y = Ki_at[1][1] * x_i[1] + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
-  tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi - Kc_at[2][5] * x_c[5];
-
+  // 3. TERCERO: Calcular errores
   error_phi = phi_ref - x_c[0];
   error_theta = theta_ref - x_c[1];
   error_psi = psi_ref - x_c[2];
+  
+  // 4. CUARTO: Actualizar integrales con saturación específica por eje
+  integral_phi = constrain(integral_phi + error_phi * dt, -MAX_INTEGRAL_ROLL_PITCH, MAX_INTEGRAL_ROLL_PITCH);
+  integral_theta = constrain(integral_theta + error_theta * dt, -MAX_INTEGRAL_ROLL_PITCH, MAX_INTEGRAL_ROLL_PITCH);
+  integral_psi = constrain(integral_psi + error_psi * dt, -MAX_INTEGRAL_YAW, MAX_INTEGRAL_YAW);
 
-  phi_ref = DesiredAngleRoll / 2.5;
-  theta_ref = DesiredAnglePitch / 2.5;
-  psi_ref = DesiredRateYaw / 2.5;
-
-  // Actualizar integrales
-  x_i[0] += error_phi * dt;
-  x_i[1] += error_theta * dt;
-  x_i[2] += error_psi * dt;
+  // 5. QUINTO: Control LQR usando las integrales actualizadas
+  tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
+  tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
+  tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi - Kc_at[2][5] * x_c[5];
 
   if (InputThrottle > 1020)
   {
@@ -165,49 +169,7 @@ void loop_manual_mode(float dt)
   {
     applyControl(0, 0, 0);
     apagarMotores();
-  }
-  if (MotorInput1 > 2000)
-  {
-    MotorInput1 = 1999;
-  }
-
-  if (MotorInput2 > 2000)
-  {
-    MotorInput2 = 1999;
-  }
-
-  if (MotorInput3 > 2000)
-  {
-    MotorInput3 = 1999;
-  }
-
-  if (MotorInput4 > 2000)
-  {
-    MotorInput4 = 1999;
-  }
-
-  if (MotorInput1 < ThrottleIdle)
-  {
-    MotorInput1 = ThrottleIdle;
-  }
-  if (MotorInput2 < ThrottleIdle)
-  {
-    MotorInput2 = ThrottleIdle;
-  }
-  if (MotorInput3 < ThrottleIdle)
-  {
-    MotorInput3 = ThrottleIdle;
-  }
-  if (MotorInput4 < ThrottleIdle)
-  {
-    MotorInput4 = ThrottleIdle;
-  }
-
-  if (ReceiverValue[2] < 1020)
-  {
-    MotorInput1 = ThrottleCutOff;
-    MotorInput2 = ThrottleCutOff;
-    MotorInput3 = ThrottleCutOff;
-    MotorInput4 = ThrottleCutOff;
+    // Resetear integrales cuando el throttle está bajo
+    integral_phi = integral_theta = integral_psi = 0;
   }
 }
