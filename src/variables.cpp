@@ -1,11 +1,8 @@
-#include <MPU6050.h> // Asegura que el compilador conoce la clase MPU6050
 #include "variables.h"
 
 // Define global variables
 float vel_z = 0.0;
 float error_z = 0.0;
-
-MPU6050 accelgyro;
 
 volatile float RatePitch = 0.0, RateRoll = 0.0, RateYaw = 0.0;
 
@@ -22,6 +19,7 @@ int ESCfreq = 500;
 
 volatile float AngleRoll_est;
 volatile float AnglePitch_est;
+volatile float AngleYaw_est;
 float tau_x, tau_y, tau_z;
 float error_phi, error_theta, error_psi;
 
@@ -72,9 +70,9 @@ int ThrottleIdle = 1170;
 int ThrottleCutOff = 1000;
 
 // Kalman filters for angle mode - OPTIMIZADO: quitado volatile innecesario
-volatile float AccX, AccY, AccZ;                            // Mantener volatile - compartido entre tareas
-volatile float AngleRoll = 0, AnglePitch = 0, AngleYaw = 0; // Mantener volatile - compartido entre tareas
-float GyroXdps, GyroYdps, GyroZdps;                         // OPTIMIZADO: solo uso local
+volatile float AccX, AccY, AccZ;                                  // Mantener volatile - compartido entre tareas
+volatile float AngleYaw = 0.0, AngleRoll = 0.0, AnglePitch = 0.0; // Mantener volatile - compartido entre tareas
+float GyroXdps, GyroYdps, GyroZdps;                               // OPTIMIZADO: solo uso local
 int DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
 int InputRoll, InputThrottle, InputPitch, InputYaw;
 int DesiredAngleRoll, DesiredAnglePitch, DesiredAngleYaw;
@@ -88,12 +86,12 @@ float complementaryAnglePitch = 0.0f;
 float MotorInput1, MotorInput2, MotorInput3, MotorInput4; // OPTIMIZADO: solo salida de control
 
 // Variables de estado
-float phi_ref = 0.0;  
+float phi_ref = 0.0;
 float theta_ref = 0.0;
-float psi_ref = 0.0;  
-float integral_phi;   
-float integral_theta; 
-float integral_psi;   
+float psi_ref = 0.0;
+float integral_phi;
+float integral_theta;
+float integral_psi;
 
 // === Variables para control avanzado ===
 // Modo deslizante
