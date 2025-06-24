@@ -15,7 +15,11 @@ SemaphoreHandle_t sensorMutex = NULL;
 // ================= CONFIGURACIÓN =================
 const char *ssid = "FAMILIAMYM";
 const char *password = "mm221418";
+<<<<<<< HEAD
 const char *websocket_server = "192.168.1.19";
+=======
+const char *websocket_server = "192.168.1.7";
+>>>>>>> 5ce464e9ceeefa0edf0be57cd6cdfa54d3308ff6
 const int websocket_port = 3003;
 const char *websocket_path = "/esp32";
 
@@ -292,31 +296,31 @@ void TaskComunicacionCode(void *pvParameters)
 void prepareAndSendMessage()
 {
     String msg = String(millis()) + "," +
-                 String(AngleRoll_est) + "," +
-                 String(AnglePitch_est) + "," +
-                 String(AngleYaw) + "," +
-                 String(gyroRateRoll) + "," +
-                 String(gyroRatePitch) + "," +
-                 String(RateYaw) + "," +
-                 String(AccX) + "," +
-                 String(AccY) + "," +
-                 String(AccZ) + "," +
-                 String(tau_x) + "," +
-                 String(tau_y) + "," +
-                 String(tau_z) + "," +
-                 String(AngleRoll) + "," +
-                 String(AnglePitch) + "," +
-                 String(error_phi) + "," +
-                 String(error_theta) + "," +
+                 String(AngleRoll_est, 3) + "," +
+                 String(AnglePitch_est, 3) + "," +
+                 String(AngleYaw, 3) + "," +
+                 String(gyroRateRoll, 3) + "," +
+                 String(gyroRatePitch, 3) + "," +
+                 String(RateYaw, 3) + "," +
+                 String(AccX, 3) + "," +
+                 String(AccY, 3) + "," +
+                 String(AccZ, 3) + "," +
+                 String(tau_x, 3) + "," +
+                 String(tau_y, 3) + "," +
+                 String(tau_z, 3) + "," +
+                 String(AngleRoll, 3) + "," +
+                 String(AnglePitch, 3) + "," +
+                 String(error_phi, 3) + "," +
+                 String(error_theta, 3) + "," +
                  String(InputThrottle) + "," +
-                 String(DesiredAngleRoll) + "," +
-                 String(DesiredAnglePitch) + "," +
-                 String(DesiredRateYaw) + "," +
-                 String(MotorInput1) + "," +
-                 String(MotorInput2) + "," +
-                 String(MotorInput3) + "," +
-                 String(MotorInput4) + "," +
-                 String(T) + "," +
+                 String(DesiredAngleRoll, 3) + "," +
+                 String(DesiredAnglePitch, 3) + "," +
+                 String(DesiredRateYaw, 3) + "," +
+                 String(MotorInput1, 3) + "," +
+                 String(MotorInput2, 3) + "," +
+                 String(MotorInput3, 3) + "," +
+                 String(MotorInput4, 3) + "," +
+                 String(T, 3) + "," +
                  String(modoActual);
     webSocket.sendTXT(msg);
 }

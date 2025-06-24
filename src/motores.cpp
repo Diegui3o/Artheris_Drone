@@ -79,10 +79,10 @@ void encenderMotores(int speed)
 void applyControl(float tau_x, float tau_y, float tau_z)
 {
     float f[4];
-    f[0] = InputThrottle - tau_x - tau_y - tau_z; // pwm1
-    f[1] = InputThrottle - tau_x + tau_y + tau_z; // pwm2
-    f[2] = InputThrottle + tau_x + tau_y - tau_z; // pwm3
-    f[3] = InputThrottle + tau_x - tau_y + tau_z; // pwm4
+    f[0] = InputThrottle + tau_x + tau_y + tau_z; // pwm1
+    f[1] = InputThrottle + tau_x - tau_y - tau_z; // pwm2
+    f[2] = InputThrottle - tau_x - tau_y + tau_z; // pwm3
+    f[3] = InputThrottle - tau_x + tau_y - tau_z; // pwm4
 
     const float f_min = 1000.0;
     const float f_max = 1990.0;
