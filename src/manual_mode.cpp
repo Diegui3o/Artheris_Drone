@@ -133,24 +133,34 @@ void setup_manual_mode()
 
 void loop_manual_mode(float dt)
 {
+  // 1. Leer valores del receptor (igual)
   DesiredAngleRoll = 0.1 * (ReceiverValue[0] - 1500);
   DesiredAnglePitch = 0.1 * (ReceiverValue[1] - 1500);
   InputThrottle = ReceiverValue[2];
   DesiredAngleYaw = 0.15 * (ReceiverValue[3] - 1500);
 
-  // 1. PRIMERO: Actualizar las referencias
-  phi_ref = DesiredAngleRoll / 2.5;
-  theta_ref = DesiredAnglePitch / 2.5;
-  psi_ref = DesiredAngleYaw / 2.5;
+  // 2. Convertir TODO a radianes (usar macro de Arduino)
+  phi_ref = (DesiredAngleRoll / 2.5) * DEG_TO_RAD;
+  theta_ref = (DesiredAnglePitch / 2.5) * DEG_TO_RAD;
+  psi_ref = (DesiredAngleYaw / 2.5) * DEG_TO_RAD;
 
-  // 2. SEGUNDO: Estado del sistema
-  float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
+  // Estados actuales (convertidos)
+  float roll_rad = AngleRoll * DEG_TO_RAD;
+  float pitch_rad = AnglePitch * DEG_TO_RAD;
+  float yaw_rad = AngleYaw * DEG_TO_RAD;
+  float gyroRoll_rad = gyroRateRoll * DEG_TO_RAD;
+  float gyroPitch_rad = gyroRatePitch * DEG_TO_RAD;
+  float gyroYaw_rad = RateYaw * DEG_TO_RAD;
 
-  // 3. TERCERO: Calcular errores
-  error_phi = phi_ref - x_c[0];
-  error_theta = theta_ref - x_c[1];
-  error_psi = psi_ref - x_c[2];
-  
+  float x_c[6] = {
+      roll_rad, pitch_rad, yaw_rad,
+      gyroRoll_rad, gyroPitch_rad, gyroYaw_rad};
+
+  // 3. Calcular errores (en radianes)
+  error_phi = phi_ref - roll_rad;
+  error_theta = theta_ref - pitch_rad;
+  error_psi = psi_ref - yaw_rad;
+
   // 4. CUARTO: Actualizar integrales con saturación específica por eje
   integral_phi = constrain(integral_phi + error_phi * dt, -MAX_INTEGRAL_ROLL_PITCH, MAX_INTEGRAL_ROLL_PITCH);
   integral_theta = constrain(integral_theta + error_theta * dt, -MAX_INTEGRAL_ROLL_PITCH, MAX_INTEGRAL_ROLL_PITCH);

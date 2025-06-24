@@ -127,7 +127,7 @@ float residual_history[window_size] = {0};
 int residual_index = 0;
 float c_threshold = 0.01;
 
-float dt = 0.009;       // Paso de tiempo (ajustar según la frecuencia de muestreo)
+float dt = 0.004;       // Paso de tiempo (ajustar según la frecuencia de muestreo)
 float Q_angle = 0.001f; // Covarianza del ruido del proceso (ángulo)
 float Q_gyro = 0.003;   // Covarianza del ruido del proceso (giroscopio)
 float R_angle = 0.03;   // Covarianza del ruido de medición (acelerómetro)
