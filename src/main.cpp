@@ -15,7 +15,7 @@ SemaphoreHandle_t sensorMutex = NULL;
 // ================= CONFIGURACIÓN =================
 const char *ssid = "FAMILIAMYM";
 const char *password = "mm221418";
-const char *websocket_server = "192.168.1.19";
+const char *websocket_server = "192.168.1.11";
 const int websocket_port = 3003;
 const char *websocket_path = "/esp32";
 
