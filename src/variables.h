@@ -3,10 +3,12 @@
 
 #include <Arduino.h>
 #include <ESP32Servo.h>
+#include <MPU6050.h>
 
 // Define window_size before it is used
 #define window_size 10 // Tamaño de la ventana
 
+extern MPU6050 accelgyro;
 extern volatile float RatePitch, RateRoll, RateYaw;
 extern float RateCalibrationPitch, RateCalibrationRoll, RateCalibrationYaw, AccXCalibration, AccYCalibration, AccZCalibration;
 extern int pinLed;
@@ -18,7 +20,7 @@ extern float t;
 
 extern volatile float AnglePitch_est;
 extern volatile float AngleRoll_est;
-extern volatile float AngleYaw_est;
+
 extern Servo mot1;
 extern Servo mot2;
 extern Servo mot3;
@@ -83,7 +85,7 @@ extern int ThrottleCutOff;
 
 // Kalman filters for angle mode
 extern volatile float AccX, AccY, AccZ;                // Mantener volatile - compartido entre tareas
-extern volatile float AngleYaw, AngleRoll, AnglePitch; // Mantener volatile - compartido entre tareas
+extern volatile float AngleRoll, AnglePitch, AngleYaw; // Mantener volatile - compartido entre tareas
 extern float GyroXdps, GyroYdps, GyroZdps;             // OPTIMIZADO: solo uso local
 // OPTIMIZADO: quitado volatile innecesario para mejor rendimiento
 extern int DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
