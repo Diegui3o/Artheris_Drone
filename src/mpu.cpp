@@ -21,8 +21,6 @@ float mag_field_strength = 29.85F;
 // Offsets applied to compensate for gyro zero-drift error for x/y/z
 float gyro_zero_offsets[3] = {0.0F, 0.0F, 0.0F};
 
-Mahony_DPEng filter;
-
 void setupMPU()
 {
   Serial.begin(115200);
