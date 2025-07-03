@@ -1,21 +1,12 @@
-#include <Arduino.h>
-#include <Wire.h>
-#include <QMC5883LCompass.h>
-#include <MPU6050.h>
 #include "variables.h"
-#include "mpu.h"
+#include "ICM_20948.h" // SparkFun ICM-20948 library
 
-QMC5883LCompass compass;
-MPU6050 mpu;
+#define SERIAL_PORT Serial
+#define WIRE_PORT Wire
+#define AD0_VAL 1 // Dirección I2C del ICM20948: 1 por defecto, 0 si ADR está conectado a GND
+#define ICM_20948_USE_DMP
 
-int yawOffset = 0;
-const int YAW_FILTER_SIZE = 5;
-float yawHistory[YAW_FILTER_SIZE] = {0};
-int yawIndex = 0;
-const float MAG_THRESHOLD = 1500.0; // Ajustar según pruebas
-
-// Variable para umbral de compensación configurable
-static float compensationThreshold = 2.0; // Grados mínimos para activar compensación
+ICM_20948_I2C myICM;
 
 // Función para el filtro de Kalman (roll)
 double Kalman_filter(Kalman &kf, float newAngle, float newRate, float dt)
@@ -52,201 +43,144 @@ double Kalman_filter(Kalman &kf, float newAngle, float newRate, float dt)
   return kf.angle;
 }
 
-void gyro_signals()
-{
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1A);
-  Wire.write(0x05);
-  Wire.endTransmission();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1C);
-  Wire.write(0x10);
-  Wire.endTransmission();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x3B);
-  Wire.endTransmission();
-  Wire.requestFrom(0x68, 6);
-  int16_t AccXLSB = Wire.read() << 8 | Wire.read();
-  int16_t AccYLSB = Wire.read() << 8 | Wire.read();
-  int16_t AccZLSB = Wire.read() << 8 | Wire.read();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1B);
-  Wire.write(0x8);
-  Wire.endTransmission();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x43);
-  Wire.endTransmission();
-  Wire.requestFrom(0x68, 6);
-  int16_t GyroX = Wire.read() << 8 | Wire.read();
-  int16_t GyroY = Wire.read() << 8 | Wire.read();
-  int16_t GyroZ = Wire.read() << 8 | Wire.read();
-
-  gyroRateRoll = GyroX / 65.5;
-  gyroRatePitch = GyroY / 65.5;
-  RateYaw = GyroZ / 65.5;
-
-  AccX = (float)AccXLSB / 4096;
-  AccY = (float)AccYLSB / 4096;
-  AccZ = (float)AccZLSB / 4096;
-
-  AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 1 / (3.142 / 180);
-  AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 1 / (3.142 / 180);
-
-  // Cálculo del ángulo estimado a partir del acelerómetro (usando atan2 puede ser más robusto)
-  accAngleRoll = atan2(AccY, sqrt(AccX * AccX + AccZ * AccZ)) * 180.0 / PI;
-  accAnglePitch = -atan2(AccX, sqrt(AccY * AccY + AccZ * AccZ)) * 180.0 / PI;
-
-  // Utiliza las tasas del giroscopio
-  float gyroRateRoll_local = gyroRateRoll;
-  float gyroRatePitch_local = gyroRatePitch;
-
-  // Actualización del filtro de Kalman para cada eje
-  AngleRoll = Kalman_filter(kalmanRoll, AngleRoll_est, gyroRateRoll_local, dt);
-  AnglePitch = Kalman_filter(kalmanPitch, AnglePitch_est, gyroRatePitch_local, dt);
-}
-
-void loop_yaw()
-{
-  compass.read();
-  float heading = compass.getAzimuth() * PI / 180.0; // Ángulo Yaw absoluto del magnetómetro (convertido a radianes)
-
-  // Normalizar el heading entre 0 y 2*PI
-  if (heading < 0)
-    heading += 2 * PI;
-  if (heading > 2 * PI)
-    heading -= 2 * PI;
-
-  // Fusión sensor con filtro complementario - más peso al magnetómetro para corregir drift
-  // AngleYaw = 0.50 * (yaw + RateYaw * dt) + 0.50 * heading;
-}
-
 void setupMPU()
 {
-  Serial.begin(115200);
-  Wire.begin(21, 22); // SDA = GPIO21, SCL = GPIO22
+  SERIAL_PORT.begin(115200);
+  delay(100);
 
-  // Inicializar magnetómetro
-  compass.init();
-  Serial.println("Inicializando magnetómetro...");
+  WIRE_PORT.begin();
+  WIRE_PORT.setClock(400000); // 400kHz I2C
 
-  // Verificar si el magnetómetro responde
-  compass.read();
-
-  mpu.initialize();
-  // Calibración automática al inicio
-  compass.setCalibration(-1767, 1345, -1503, 1199, -1325, 1567);
-  delay(2000); // Esperar estabilización
-
-  calibrateSensors();
-  Serial.println("Calibración completada.");
-}
-
-// === CALIBRACIÓN DEL MPU6050 ===
-void calibrateSensors()
-{
-  Serial.println("\nCalibrando sensores...");
-
-  accelgyro.setXAccelOffset(0);
-  accelgyro.setYAccelOffset(0);
-  accelgyro.setZAccelOffset(0);
-  accelgyro.setXGyroOffset(0);
-  accelgyro.setYGyroOffset(0);
-  accelgyro.setZGyroOffset(0);
-
-  meansensors();
-  Serial.println("\nCalculando offsets...");
-  calibration();
-
-  accelgyro.setXAccelOffset(ax_offset);
-  accelgyro.setYAccelOffset(ay_offset);
-  accelgyro.setZAccelOffset(az_offset);
-  accelgyro.setXGyroOffset(gx_offset);
-  accelgyro.setYGyroOffset(gy_offset);
-  accelgyro.setZGyroOffset(gz_offset);
-
-  Serial.println("Calibración completada.");
-}
-
-void meansensors()
-{
-  long i = 0, buff_ax = 0, buff_ay = 0, buff_az = 0, buff_gx = 0, buff_gy = 0, buff_gz = 0;
-  while (i < (buffersize + 101))
+  // Inicialización del sensor
+  bool initialized = false;
+  while (!initialized)
   {
-    accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-    if (i > 100 && i <= (buffersize + 100))
+    myICM.begin(WIRE_PORT, AD0_VAL);
+
+#ifndef QUAT_ANIMATION
+    SERIAL_PORT.print(F("Sensor status: "));
+    SERIAL_PORT.println(myICM.statusString());
+#endif
+
+    if (myICM.status != ICM_20948_Stat_Ok)
     {
-      buff_ax += ax;
-      buff_ay += ay;
-      buff_az += az;
-      buff_gx += gx;
-      buff_gy += gy;
-      buff_gz += gz;
+#ifndef QUAT_ANIMATION
+      SERIAL_PORT.println(F("Trying again..."));
+#endif
+      delay(500);
     }
-    i++;
-    delay(2);
+    else
+    {
+      initialized = true;
+    }
   }
 
-  mean_ax = buff_ax / buffersize;
-  mean_ay = buff_ay / buffersize;
-  mean_az = buff_az / buffersize;
-  mean_gx = buff_gx / buffersize;
-  mean_gy = buff_gy / buffersize;
-  mean_gz = buff_gz / buffersize;
+#ifndef QUAT_ANIMATION
+  SERIAL_PORT.println(F("Device connected!"));
+#endif
+
+  // Configuración del DMP
+  bool success = true;
+  success &= (myICM.initializeDMP() == ICM_20948_Stat_Ok);
+  success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_GAME_ROTATION_VECTOR) == ICM_20948_Stat_Ok);
+  success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_RAW_ACCELEROMETER) == ICM_20948_Stat_Ok);
+  success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_RAW_GYROSCOPE) == ICM_20948_Stat_Ok);
+  success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_MAGNETIC_FIELD_UNCALIBRATED) == ICM_20948_Stat_Ok);
+
+  // Configurar ODR para cada sensor
+  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Quat6, 10) == ICM_20948_Stat_Ok); // ~5Hz
+  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Accel, 10) == ICM_20948_Stat_Ok); // ~5Hz
+  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Gyro, 10) == ICM_20948_Stat_Ok);  // ~5Hz
+  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Cpass, 10) == ICM_20948_Stat_Ok); // ~5Hz
+
+  // Habilitar FIFO y DMP
+  success &= (myICM.enableFIFO() == ICM_20948_Stat_Ok);
+  success &= (myICM.enableDMP() == ICM_20948_Stat_Ok);
+  success &= (myICM.resetDMP() == ICM_20948_Stat_Ok);
+  success &= (myICM.resetFIFO() == ICM_20948_Stat_Ok);
+
+  if (success)
+  {
+    SERIAL_PORT.println(F("DMP enabled! Ready to read data."));
+  }
+  else
+  {
+    SERIAL_PORT.println(F("Enable DMP failed!"));
+    SERIAL_PORT.println(F("Please ensure '#define ICM_20948_USE_DMP' is enabled in ICM_20948_C.h"));
+    while (true)
+      ; // Error fatal, detener ejecución
+  }
 }
 
-void calibration()
+void gyro_signals()
 {
-  ax_offset = -mean_ax / 8;
-  ay_offset = -mean_ay / 8;
-  az_offset = (16384 - mean_az) / 8;
+  icm_20948_DMP_data_t data;
 
-  gx_offset = -mean_gx / 4;
-  gy_offset = -mean_gy / 4;
-  gz_offset = -mean_gz / 4;
-
-  while (1)
+  // Leer datos hasta vaciar FIFO
+  while (myICM.readDMPdataFromFIFO(&data) == ICM_20948_Stat_FIFOMoreDataAvail ||
+         myICM.status == ICM_20948_Stat_Ok)
   {
-    int ready = 0;
-    accelgyro.setXAccelOffset(ax_offset);
-    accelgyro.setYAccelOffset(ay_offset);
-    accelgyro.setZAccelOffset(az_offset);
-    accelgyro.setXGyroOffset(gx_offset);
-    accelgyro.setYGyroOffset(gy_offset);
-    accelgyro.setZGyroOffset(gz_offset);
+    // --- Cuaterniones (para ángulos de Euler) ---
+    if (data.header & DMP_header_bitmap_Quat6)
+    {
+      double q1 = ((double)data.Quat6.Data.Q1) / 1073741824.0;
+      double q2 = ((double)data.Quat6.Data.Q2) / 1073741824.0;
+      double q3 = ((double)data.Quat6.Data.Q3) / 1073741824.0;
+      double q0 = sqrt(1.0 - (q1 * q1 + q2 * q2 + q3 * q3)); // Calcular q0
 
-    meansensors();
+      // Reordenar según convención deseada
+      double qw = q0;
+      double qx = q2;
+      double qy = q1;
+      double qz = -q3;
 
-    if (abs(mean_ax) <= acel_deadzone)
-      ready++;
-    else
-      ax_offset -= mean_ax / acel_deadzone;
+      // Calcular ángulos de Euler
+      double t0 = +2.0 * (qw * qx + qy * qz);
+      double t1 = +1.0 - 2.0 * (qx * qx + qy * qy);
+      AnglePitch_est = atan2(t0, t1) * 180.0 / PI;
 
-    if (abs(mean_ay) <= acel_deadzone)
-      ready++;
-    else
-      ay_offset -= mean_ay / acel_deadzone;
+      double t2 = +2.0 * (qw * qy - qx * qz);
+      t2 = constrain(t2, -1.0, 1.0);
+      AngleRoll_est = asin(t2) * 180.0 / PI;
 
-    if (abs(16384 - mean_az) <= acel_deadzone)
-      ready++;
-    else
-      az_offset += (16384 - mean_az) / acel_deadzone;
+      double t3 = +2.0 * (qw * qz + qx * qy);
+      double t4 = +1.0 - 2.0 * (qy * qy + qz * qz);
+      double yaw = atan2(t3, t4) * 180.0 / PI;
 
-    if (abs(mean_gx) <= giro_deadzone)
-      ready++;
-    else
-      gx_offset -= mean_gx / (giro_deadzone + 1);
+      // (Opcional: guardar yaw si lo necesitas)
+      // AngleYaw = yaw;
+    }
 
-    if (abs(mean_gy) <= giro_deadzone)
-      ready++;
-    else
-      gy_offset -= mean_gy / (giro_deadzone + 1);
+    // --- Aceleración cruda ---
+    if (data.header & DMP_header_bitmap_Accel)
+    {
+      AccX = (float)data.Raw_Accel.Data.X / 4096;
+      AccY = (float)data.Raw_Accel.Data.Y / 4096;
+      AccZ = (float)data.Raw_Accel.Data.Z / 4096;
+    }
 
-    if (abs(mean_gz) <= giro_deadzone)
-      ready++;
-    else
-      gz_offset -= mean_gz / (giro_deadzone + 1);
+    // --- Giroscopio crudo ---
+    if (data.header & DMP_header_bitmap_Gyro)
+    {
+      gyroRateRoll = (float)data.Raw_Gyro.Data.X / 65.5;  // Velocidad angular en X (Roll rate)
+      gyroRatePitch = (float)data.Raw_Gyro.Data.Y / 65.5; // Velocidad angular en Y (Pitch rate)
+      RateYaw = (float)data.Raw_Gyro.Data.Z / 65.5;       // Velocidad angular en Z (Yaw rate)
+    }
 
-    if (ready == 6)
-      break;
+    // --- Magnetómetro (opcional) ---
+    if (data.header & DMP_header_bitmap_Compass)
+    {
+      float magX = (float)data.Compass.Data.X;
+      float magY = (float)data.Compass.Data.Y;
+      float magZ = (float)data.Compass.Data.Z;
+    }
+
+    // Utiliza las tasas del giroscopio
+    float gyroRateRoll_local = gyroRateRoll;
+    float gyroRatePitch_local = gyroRatePitch;
+
+    // Actualización del filtro de Kalman para cada eje
+    AngleRoll = Kalman_filter(kalmanRoll, AngleRoll_est, gyroRateRoll_local, dt);
+    AnglePitch = Kalman_filter(kalmanPitch, AnglePitch_est, gyroRatePitch_local, dt);
   }
 }
