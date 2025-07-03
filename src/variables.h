@@ -199,4 +199,9 @@ extern float g1;
 extern float k2;
 extern float g2;
 
+// Declaración, no definición
+extern float Kc_at[3][6];
+extern const float Ki_at[3][3];
+float sat(float, float); // Declaración de función
+
 #endif // VARIABLES_H

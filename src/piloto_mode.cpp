@@ -9,23 +9,13 @@
 #include "mpu.h"
 #include "motores.h"
 
+// Límites de integral por eje (ajustados a las ganancias actuales)
+#define MAX_INTEGRAL_ROLL_PITCH 100.0f // Para Ki=0.6: permite τ máximo de ~60
+#define MAX_INTEGRAL_YAW 300.0f        // Para Ki=0.1: permite τ máximo de ~30
+#define TORQUE_SCALE 50.0f
+
 // Variable to track MPU calibration status
 bool mpu_ready = false;
-
-// === Matrices LQR ===
-const float Ki_at[3][3] = {
-    {13, 0, 0},
-    {0, 13, 0},
-    {0, 0, 3}};
-
-const float Kc_at[3][6] = {
-    {5.2, 0, 0, 2.5, 0, 0},
-    {0, 5.2, 0, 0, 2.5, 0},
-    {0, 0, 5.3, 0, 0, 1.6}};
-
-// === Matrices LQR para altitud ===
-const float Ki_alt = 31.6228;
-const float Kc_alt[2] = {28.8910, 10.5624};
 
 // === SETUP INICIAL ===
 void setup_pilote_mode()
@@ -46,68 +36,61 @@ void loop_pilote_mode(float dt)
         InputThrottle = 1000; // Empezar en 1000
         throttle_initialized = true;
     }
-
-    // Estado del sistema
-    float x_c[6] = {AngleRoll, AnglePitch, AngleYaw, gyroRateRoll, gyroRatePitch, RateYaw};
-    float x_i[3] = {integral_phi, integral_theta, integral_psi}; // Calcular errores ANTES del control LQR
-    error_phi = phi_ref - x_c[0];
-    error_theta = theta_ref - x_c[1];
-    error_psi = psi_ref - x_c[2];
-
-    // === 1. Feedforward (basado en cambios de referencia) ===
-    ff_phi = 0.1 * (phi_ref - prev_phi_ref) / dt; // Derivada de la referencia
-    ff_theta = 0.1 * (theta_ref - prev_theta_ref) / dt;
-    ff_psi = 0.0; // Opcional para yaw
-
-    // Control LQR para generar tau
-    tau_x = Ki_at[0][0] * x_i[0] + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
-    tau_y = Ki_at[1][1] * x_i[1] + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
-    tau_z = Ki_at[2][2] * x_i[2] + Kc_at[2][2] * error_psi - Kc_at[2][5] * x_c[5];
-
-    // Actualizar integrales
-    x_i[0] += error_phi * dt;
-    x_i[1] += error_theta * dt;
-    x_i[2] += error_psi * dt;
-
-    tau_x -= Ki_at[0][0] * x_i[0];
-    tau_y -= Ki_at[1][1] * x_i[1];
-    tau_z -= Ki_at[2][2] * x_i[2];
-
-    // === 2. Modo deslizante para roll y pitch (robustez) ===
-    S_phi = (gyroRateRoll) + lambda_sliding * error_phi; // Superficie deslizante
-    S_theta = (gyroRatePitch) + lambda_sliding * error_theta;
-
-    // Término de control deslizante (signo suavizado para evitar chattering)
-    float sliding_term_phi = 0.5 * sat(S_phi, 0.1); // Función de saturación
-    float sliding_term_theta = 0.5 * sat(S_theta, 0.1);
-
-    // === 3. Combinar todos los términos de control ===
-    tau_x += ff_phi + sliding_term_phi;     // LQR + Feedforward + Sliding Mode
-    tau_y += ff_theta + sliding_term_theta; // LQR + Feedforward + Sliding Mode
-    tau_z += ff_psi;                        // LQR + Feedforward
-
-    // Guardar referencia actual para el próximo ciclo (feedforward)
-    prev_phi_ref = phi_ref;
-    prev_theta_ref = theta_ref;
-
-    // Incrementar throttle gradualmente de 1000 a 1850
-    if (InputThrottle < 1850)
+    if (InputThrottle > 1020 && InputThrottle < 2000)
     {
-        InputThrottle += 3.0; // Incremento de 3 unidades por ciclo
-        if (InputThrottle > 1850)
-        {
-            InputThrottle = 1850; // Limitar a máximo 1850
-        }
-    }
+        k1 = 2.1 + (1.001 / (1 + pow((InputThrottle / 1355.318), 42.52)));
+        Kc_at[0][0] = k1;
+        k2 = 1.92 + (1.001 / (1 + pow((InputThrottle / 1355.318), 42.52)));
+        Kc_at[1][1] = k2;
 
-    // Aplicar control cuando el throttle esté por encima del mínimo de seguridad
-    if (InputThrottle > 1020)
-    {
+        g1 = 0.58 + (1 / (1 + pow((InputThrottle / 1355.318), 42.52)));
+        Kc_at[0][3] = g1;
+        g2 = 0.38 + (1 / (1 + pow((InputThrottle / 1355.318), 42.52)));
+        Kc_at[1][4] = g2;
+
+        // 2. Convertir TODO a radianes (usar macro de Arduino)
+        phi_ref = (DesiredAngleRoll / 2.5) * DEG_TO_RAD;
+        theta_ref = (DesiredAnglePitch / 2.5) * DEG_TO_RAD;
+        psi_ref = (DesiredAngleYaw / 2.5) * DEG_TO_RAD;
+
+        // Estados actuales (convertidos)
+        float roll_rad = AngleRoll * DEG_TO_RAD;
+        float pitch_rad = AnglePitch * DEG_TO_RAD;
+        float yaw_rad = AngleYaw * DEG_TO_RAD;
+        float gyroRoll_rad = gyroRateRoll * DEG_TO_RAD;
+        float gyroPitch_rad = gyroRatePitch * DEG_TO_RAD;
+        float gyroYaw_rad = RateYaw * DEG_TO_RAD;
+
+        float x_c[6] = {
+            roll_rad, pitch_rad, yaw_rad,
+            gyroRoll_rad, gyroPitch_rad, gyroYaw_rad};
+
+        // 3. Calcular errores (en radianes)
+        error_phi = phi_ref - roll_rad;
+        error_theta = theta_ref - pitch_rad;
+        error_psi = psi_ref - yaw_rad;
+
+        // 4. CUARTO: Actualizar integrales con saturación específica por eje
+        integral_phi = constrain(integral_phi + error_phi * dt, -MAX_INTEGRAL_ROLL_PITCH, MAX_INTEGRAL_ROLL_PITCH);
+        integral_theta = constrain(integral_theta + error_theta * dt, -MAX_INTEGRAL_ROLL_PITCH, MAX_INTEGRAL_ROLL_PITCH);
+        integral_psi = constrain(integral_psi + error_psi * dt, -MAX_INTEGRAL_YAW, MAX_INTEGRAL_YAW);
+
+        // 5. QUINTO: Control LQR usando las integrales actualizadas
+        tau_x = Ki_at[0][0] * integral_phi - Kc_at[0][0] * roll_rad - Kc_at[0][3] * x_c[3];
+        tau_y = Ki_at[1][1] * integral_theta - Kc_at[1][1] * pitch_rad - Kc_at[1][4] * x_c[4];
+        tau_z = Ki_at[2][2] * integral_psi - Kc_at[2][2] * AngleYaw - Kc_at[2][5] * RateYaw;
+
+        // 5. Escalar torques a PWM (ejemplo: 500 μs/N·m)
+        tau_x *= TORQUE_SCALE;
+        tau_y *= TORQUE_SCALE;
+
         applyControl(tau_x, tau_y, tau_z);
     }
     else
     {
         applyControl(0, 0, 0);
         apagarMotores();
+        // Resetear integrales cuando el throttle está bajo
+        integral_phi = integral_theta = integral_psi = 0;
     }
 }

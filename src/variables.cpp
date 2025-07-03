@@ -88,12 +88,12 @@ float complementaryAnglePitch = 0.0f;
 float MotorInput1, MotorInput2, MotorInput3, MotorInput4; // OPTIMIZADO: solo salida de control
 
 // Variables de estado
-int phi_ref = 0.0;  
+int phi_ref = 0.0;
 int theta_ref = 0.0;
-int psi_ref = 0.0;  
-float integral_phi;   
-float integral_theta; 
-float integral_psi;   
+int psi_ref = 0.0;
+float integral_phi;
+float integral_theta;
+float integral_psi;
 
 // === Variables para control avanzado ===
 // Modo deslizante
@@ -160,9 +160,12 @@ float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;
 float yaw = 0.0f;
 
 // === UTILITY FUNCTIONS ===
-float sat(float x, float epsilon) {
-  if (x > epsilon) return 1.0;
-  if (x < -epsilon) return -1.0;
+float sat(float x, float epsilon)
+{
+  if (x > epsilon)
+    return 1.0;
+  if (x < -epsilon)
+    return -1.0;
   return x / epsilon;
 }
 
@@ -170,3 +173,14 @@ float k1;
 float g1;
 float k2;
 float g2;
+
+// Definición real (solo aquí)
+float Kc_at[3][6] = {
+    {2.1, 0, 0, 0.58, 0, 0},
+    {0, 1.92, 0, 0, 0.38, 0},
+    {0, 0, 5.3, 0, 0, 1.6}};
+
+const float Ki_at[3][3] = {
+    {0.08, 0, 0},
+    {0, 0.08, 0},
+    {0, 0, 0.01}};

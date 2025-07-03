@@ -85,9 +85,9 @@ void gyro_signals(void)
   gyroRatePitch = GyroY / 65.5;
   RateYaw = GyroZ / 65.5;
 
-  AccX=(float)AccXLSB/4096;
-  AccY=(float)AccYLSB/4096;
-  AccZ=(float)AccZLSB/4096;
+  AccX = (float)AccXLSB / 4096;
+  AccY = (float)AccYLSB / 4096;
+  AccZ = (float)AccZLSB / 4096;
 
   AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 1 / (3.142 / 180);
   AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 1 / (3.142 / 180);
@@ -103,23 +103,18 @@ void gyro_signals(void)
   // Actualización del filtro de Kalman para cada eje
   AngleRoll = Kalman_filter(kalmanRoll, AngleRoll_est, gyroRateRoll_local, dt);
   AnglePitch = Kalman_filter(kalmanPitch, AnglePitch_est, gyroRatePitch_local, dt);
-
-  // Integración de la tasa de Yaw para obtener el ángulo (¡puede haber drift!)
 }
 
 void loop_yaw()
 {
   compass.read();
-  float heading = compass.getAzimuth() * PI / 180.0; // Ángulo Yaw absoluto del magnetómetro (convertido a radianes)
+  float heading = compass.getAzimuth() * PI / 180.0;
 
   // Normalizar el heading entre 0 y 2*PI
   if (heading < 0)
     heading += 2 * PI;
   if (heading > 2 * PI)
     heading -= 2 * PI;
-
-  // Fusión sensor con filtro complementario - más peso al magnetómetro para corregir drift
-  // AngleYaw = 0.50 * (yaw + RateYaw * dt) + 0.50 * heading;
 }
 
 void setupMPU()

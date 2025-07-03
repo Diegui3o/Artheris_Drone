@@ -14,17 +14,6 @@
 #define MAX_INTEGRAL_YAW 300.0f        // Para Ki=0.1: permite τ máximo de ~30
 #define TORQUE_SCALE 120.0
 
-// === Matrices LQR ===
-const float Ki_at[3][3] = {
-    {0.04, 0, 0},
-    {0, 0.04, 0},
-    {0, 0, 0.01}};
-
-float Kc_at[3][6] = {
-    {2.1, 0, 0, 0.58, 0, 0},
-    {0, 1.92, 0, 0, 0.38, 0},
-    {0, 0, 5.3, 0, 0, 1.6}};
-
 void channelInterrupHandler()
 {
   current_time = micros();
@@ -154,9 +143,23 @@ void loop_manual_mode(float dt)
     Kc_at[1][4] = g2;
 
     // 2. Convertir TODO a radianes (usar macro de Arduino)
-    phi_ref = (DesiredAngleRoll / 2.5) * DEG_TO_RAD;
-    theta_ref = (DesiredAnglePitch / 2.5) * DEG_TO_RAD;
-    psi_ref = (DesiredAngleYaw / 2.5) * DEG_TO_RAD;
+    phi_ref = (DesiredAngleRoll / 2.8) * DEG_TO_RAD;
+    theta_ref = (DesiredAnglePitch / 2.8) * DEG_TO_RAD;
+    psi_ref = (DesiredAngleYaw / 2.8) * DEG_TO_RAD;
+
+    // Aplicar zona muerta de ±3° (en radianes ~0.052 rad)
+    if (abs(phi_ref) < 3.0 * DEG_TO_RAD)
+    {
+      phi_ref = 0.00;
+    }
+    if (abs(theta_ref) < 3.0 * DEG_TO_RAD)
+    {
+      theta_ref = 0.00;
+    }
+    if (abs(psi_ref) < 3.0 * DEG_TO_RAD)
+    {
+      psi_ref = 0.00;
+    }
 
     // Estados actuales (convertidos)
     float roll_rad = AngleRoll * DEG_TO_RAD;
@@ -173,7 +176,7 @@ void loop_manual_mode(float dt)
     // 3. Calcular errores (en radianes)
     error_phi = phi_ref - roll_rad;
     error_theta = theta_ref - pitch_rad;
-    error_psi = psi_ref - yaw_rad;
+    error_psi = psi_ref - AngleYaw;
 
     // 4. CUARTO: Actualizar integrales con saturación específica por eje
     integral_phi = constrain(integral_phi + error_phi * dt, -MAX_INTEGRAL_ROLL_PITCH, MAX_INTEGRAL_ROLL_PITCH);
@@ -181,9 +184,9 @@ void loop_manual_mode(float dt)
     integral_psi = constrain(integral_psi + error_psi * dt, -MAX_INTEGRAL_YAW, MAX_INTEGRAL_YAW);
 
     // 5. QUINTO: Control LQR usando las integrales actualizadas
-    tau_x = Ki_at[0][0] * integral_phi - Kc_at[0][0] * roll_rad - Kc_at[0][3] * x_c[3];
-    tau_y = Ki_at[1][1] * integral_theta - Kc_at[1][1] * pitch_rad - Kc_at[1][4] * x_c[4];
-    tau_z = Ki_at[2][2] * integral_psi - Kc_at[2][2] * AngleYaw - Kc_at[2][5] * RateYaw;
+    tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
+    tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
+    tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi - Kc_at[2][5] * RateYaw;
 
     // 5. Escalar torques a PWM (ejemplo: 500 μs/N·m)
     tau_x *= TORQUE_SCALE;
