@@ -1,3 +1,4 @@
+
 #include <Arduino.h>
 #include <Wire.h>
 #include "I2Cdev.h"
@@ -9,14 +10,6 @@
 
 void setupMotores()
 {
-    Wire.setClock(400000);
-    Wire.begin();
-    delay(250);
-    Wire.beginTransmission(0x68);
-    Wire.write(0x6B);
-    Wire.write(0x00);
-    Wire.endTransmission();
-
     ESP32PWM::allocateTimer(0);
     ESP32PWM::allocateTimer(1);
     ESP32PWM::allocateTimer(2);
@@ -79,10 +72,10 @@ void encenderMotores(int speed)
 void applyControl(float tau_x, float tau_y, float tau_z)
 {
     float f[4];
-    f[0] = InputThrottle + tau_x + tau_y + tau_z; // pwm1
-    f[1] = InputThrottle + tau_x - tau_y - tau_z; // pwm2
-    f[2] = InputThrottle - tau_x - tau_y + tau_z; // pwm3
-    f[3] = InputThrottle - tau_x + tau_y - tau_z; // pwm4
+    f[0] = InputThrottle - tau_x - tau_y - tau_z; // pwm1
+    f[1] = InputThrottle - tau_x + tau_y + tau_z; // pwm2
+    f[2] = InputThrottle + tau_x + tau_y - tau_z; // pwm3
+    f[3] = InputThrottle + tau_x - tau_y + tau_z; // pwm4
 
     const float f_min = 1000.0;
     const float f_max = 1990.0;

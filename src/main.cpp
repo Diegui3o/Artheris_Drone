@@ -9,19 +9,20 @@
 #include "piloto_mode.h"
 #include "manual_mode.h"
 #include <esp_task_wdt.h>
+#include "soc/rtc_cntl_reg.h"
 
 SemaphoreHandle_t sensorMutex = NULL;
 
 // ================= CONFIGURACIÓN =================
-const char *ssid = "FAMILIAMYM";
-const char *password = "mm221418";
-const char *websocket_server = "192.168.1.11";
-const int websocket_port = 3003;
+const char *ssid = "WLAN_F388";
+const char *password = "wP4AzXER43E9";
+const char *websocket_server = "192.168.1.33"; // IP de tu servidor Node.js
+const int websocket_port = 3003;               // Puerto debe coincidir con el servidor
 const char *websocket_path = "/esp32";
 
 // Configuración IP fija
-IPAddress local_IP(192, 168, 1, 200); // IP fija para el ESP32 en la red Wi-Fi
-IPAddress gateway(192, 168, 1, 1);    // Puerta de enlace de tu red Wi-Fi
+IPAddress local_IP(192, 168, 1, 200);           // IP fija para el ESP32 en la red Wi-Fi
+IPAddress gateway(192, 168, 1, 1);              // Puerta de enlace de tu red Wi-Fi
 IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);
 IPAddress secondaryDNS(8, 8, 4, 4);
@@ -40,9 +41,9 @@ WebSocketsClient webSocket;
 unsigned long lastConnectionAttempt = 0;
 const long connectionInterval = 5000; // Intentar reconectar cada 5 segundos
 unsigned long lastSendTime = 0;
-const int sendInterval = 6;
-char txBuffer[400];
-#define BUFFER_SIZE 80
+const int sendInterval = 10;
+char txBuffer[200];
+#define BUFFER_SIZE 60
 struct SensorData
 {
     float roll, pitch, yaw;
@@ -231,7 +232,7 @@ void TaskControlCode(void *pvParameters)
         {
             static uint32_t sensor_last_time = 0;
             float sensor_dt = (micros() - sensor_last_time) / 1e6;
-            if (sensor_dt >= 0.001)
+            if (sensor_dt >= 0.001) // 25Hz para sensores SIEMPRE
             {
                 if (xSemaphoreTake(sensorMutex, 0) == pdTRUE) // No bloquear
                 {
@@ -247,7 +248,7 @@ void TaskControlCode(void *pvParameters)
         {
             static uint32_t control_last_time = 0;
             float control_dt = (micros() - control_last_time) / 1e6;
-            if (control_dt >= 0.001)
+            if (control_dt >= 0.001 ) // 25Hz para control
             {
                 if (xSemaphoreTake(sensorMutex, 0) == pdTRUE) // No bloquear
                 {
@@ -292,31 +293,31 @@ void TaskComunicacionCode(void *pvParameters)
 void prepareAndSendMessage()
 {
     String msg = String(millis()) + "," +
-                 String(AngleRoll_est, 3) + "," +
-                 String(AnglePitch_est, 3) + "," +
-                 String(AngleYaw, 3) + "," +
-                 String(gyroRateRoll, 3) + "," +
-                 String(gyroRatePitch, 3) + "," +
-                 String(RateYaw, 3) + "," +
-                 String(AccX, 3) + "," +
-                 String(AccY, 3) + "," +
-                 String(AccZ, 3) + "," +
-                 String(tau_x, 3) + "," +
-                 String(tau_y, 3) + "," +
-                 String(tau_z, 3) + "," +
-                 String(AngleRoll, 3) + "," +
-                 String(AnglePitch, 3) + "," +
-                 String(error_phi, 3) + "," +
-                 String(error_theta, 3) + "," +
+                 String(DesiredAngleRoll) + "," +
+                 String(DesiredAnglePitch) + "," +
+                 String(AngleYaw) + "," +
+                 String(gyroRateRoll) + "," +
+                 String(gyroRatePitch) + "," +
+                 String(RateYaw) + "," +
+                 String(AccX) + "," +
+                 String(AccY) + "," +
+                 String(AccZ) + "," +
+                 String(tau_x) + "," +
+                 String(tau_y) + "," +
+                 String(tau_z) + "," +
+                 String(AngleRoll) + "," +
+                 String(AnglePitch) + "," +
+                 String(error_phi) + "," +
+                 String(error_theta) + "," +
                  String(InputThrottle) + "," +
-                 String(DesiredAngleRoll, 3) + "," +
-                 String(DesiredAnglePitch, 3) + "," +
-                 String(DesiredRateYaw, 3) + "," +
-                 String(MotorInput1, 3) + "," +
-                 String(MotorInput2, 3) + "," +
-                 String(MotorInput3, 3) + "," +
-                 String(MotorInput4, 3) + "," +
-                 String(T, 3) + "," +
+                 String(DesiredAngleRoll) + "," +
+                 String(DesiredAnglePitch) + "," +
+                 String(DesiredRateYaw) + "," +
+                 String(MotorInput1) + "," +
+                 String(MotorInput2) + "," +
+                 String(MotorInput3) + "," +
+                 String(MotorInput4) + "," +
+                 String(T) + "," +
                  String(modoActual);
     webSocket.sendTXT(msg);
 }
