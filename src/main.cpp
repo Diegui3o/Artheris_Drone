@@ -9,19 +9,20 @@
 #include "piloto_mode.h"
 #include "manual_mode.h"
 #include <esp_task_wdt.h>
+#include "soc/rtc_cntl_reg.h"
 
 SemaphoreHandle_t sensorMutex = NULL;
 
 // ================= CONFIGURACIÓN =================
-const char *ssid = "FAMILIAMYM";
-const char *password = "mm221418";
-const char *websocket_server = "192.168.1.11";
-const int websocket_port = 3003;
+const char *ssid = "Laser018";
+const char *password = "20240018";
+const char *websocket_server = "192.168.0.165"; // IP de tu servidor Node.js
+const int websocket_port = 3003;               // Puerto debe coincidir con el servidor
 const char *websocket_path = "/esp32";
 
 // Configuración IP fija
-IPAddress local_IP(192, 168, 1, 200); // IP fija para el ESP32 en la red Wi-Fi
-IPAddress gateway(192, 168, 1, 1);    // Puerta de enlace de tu red Wi-Fi
+IPAddress local_IP(192, 168, 0, 200); // IP fija para el ESP32 en la red Wi-Fi
+IPAddress gateway(192, 168, 0, 1);    // Puerta de enlace de tu red Wi-Fi
 IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);
 IPAddress secondaryDNS(8, 8, 4, 4);
@@ -41,8 +42,8 @@ unsigned long lastConnectionAttempt = 0;
 const long connectionInterval = 5000; // Intentar reconectar cada 5 segundos
 unsigned long lastSendTime = 0;
 const int sendInterval = 6;
-char txBuffer[400];
-#define BUFFER_SIZE 80
+char txBuffer[600];
+#define BUFFER_SIZE 90
 struct SensorData
 {
     float roll, pitch, yaw;
@@ -231,7 +232,7 @@ void TaskControlCode(void *pvParameters)
         {
             static uint32_t sensor_last_time = 0;
             float sensor_dt = (micros() - sensor_last_time) / 1e6;
-            if (sensor_dt >= 0.001)
+            if (sensor_dt >= 0.002)
             {
                 if (xSemaphoreTake(sensorMutex, 0) == pdTRUE) // No bloquear
                 {
@@ -247,7 +248,7 @@ void TaskControlCode(void *pvParameters)
         {
             static uint32_t control_last_time = 0;
             float control_dt = (micros() - control_last_time) / 1e6;
-            if (control_dt >= 0.001)
+            if (control_dt >= 0.002)
             {
                 if (xSemaphoreTake(sensorMutex, 0) == pdTRUE) // No bloquear
                 {

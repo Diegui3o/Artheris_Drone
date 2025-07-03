@@ -7,21 +7,22 @@
 #include "mpu.h"
 #include "manual_mode.h"
 #include "motores.h"
+#include <math.h>
 
 // Límites de integral por eje (ajustados a las ganancias actuales)
 #define MAX_INTEGRAL_ROLL_PITCH 100.0f // Para Ki=0.6: permite τ máximo de ~60
 #define MAX_INTEGRAL_YAW 300.0f        // Para Ki=0.1: permite τ máximo de ~30
-#define TORQUE_SCALE 120.0f
+#define TORQUE_SCALE 150.0
 
 // === Matrices LQR ===
-float Ki_at[3][3] = {
-    {0.6, 0, 0},
-    {0, 0.6, 0},
-    {0, 0, 0.1}};
+const float Ki_at[3][3] = {
+    {0, 0, 0},
+    {0, 0, 0},
+    {0, 0, 0}};
 
 float Kc_at[3][6] = {
-    {5.5, 0, 0, 3.6, 0, 0},
-    {0, 5.5, 0, 0, 3.6, 0},
+    {1.93, 0, 0, 0.38, 0, 0},
+    {0, 1.93, 0, 0, 0.38, 0},
     {0, 0, 5.3, 0, 0, 1.6}};
 
 void channelInterrupHandler()
@@ -142,29 +143,22 @@ void loop_manual_mode(float dt)
 
   if (InputThrottle > 1020 && InputThrottle < 2000)
   {
-    // === ESCALADO ADAPTATIVO ===
-    const float throttle_nominal = 1600.0;
-    const float gainSlope = 0.002;
-    float gain_scale = constrain(1.0 + gainSlope * (throttle_nominal - InputThrottle), 0.7, 1.3);
+    //k1 = 2.1 + (1.001 / (1 + pow((InputThrottle / 1355.318), 42.52)));
+    //Kc_at[0][0] = k1;
+    //k2 = 1.92 + (1.001 / (1 + pow((InputThrottle / 1355.318), 42.52)));
+    //Kc_at[1][1] = k2;
 
-    // Actualiza las matrices directamente
-    Kc_at[0][0] = 1.92 * gain_scale;
-    Kc_at[0][3] = 0.38 * gain_scale;
-    Kc_at[1][1] = 1.92 * gain_scale;
-    Kc_at[1][4] = 0.38 * gain_scale;
-    Kc_at[2][2] = 0.5 * gain_scale;
-    Kc_at[2][5] = 0.15 * gain_scale;
+    //g1 = 0.58 + (1 / (1 + pow((InputThrottle / 1355.318), 42.52)));
+    //Kc_at[0][3] = g1;
+    //g2 = 0.38 + (1 / (1 + pow((InputThrottle / 1355.318), 42.52)));
+    //Kc_at[1][4] = g2;
 
-    Ki_at[0][0] = 0.04 * gain_scale;
-    Ki_at[1][1] = 0.04 * gain_scale;
-    Ki_at[2][2] = 0.01 * gain_scale;
-
-    // 2. Convertir TODO a radianes
+    // 2. Convertir TODO a radianes (usar macro de Arduino)
     phi_ref = (DesiredAngleRoll / 2.5) * DEG_TO_RAD;
     theta_ref = (DesiredAnglePitch / 2.5) * DEG_TO_RAD;
     psi_ref = (DesiredAngleYaw / 2.5) * DEG_TO_RAD;
 
-    // Estados actuales
+    // Estados actuales (convertidos)
     float roll_rad = AngleRoll * DEG_TO_RAD;
     float pitch_rad = AnglePitch * DEG_TO_RAD;
     float yaw_rad = AngleYaw * DEG_TO_RAD;
@@ -176,25 +170,24 @@ void loop_manual_mode(float dt)
         roll_rad, pitch_rad, yaw_rad,
         gyroRoll_rad, gyroPitch_rad, gyroYaw_rad};
 
-    // 3. Calcular errores
+    // 3. Calcular errores (en radianes)
     error_phi = phi_ref - roll_rad;
     error_theta = theta_ref - pitch_rad;
     error_psi = psi_ref - yaw_rad;
 
-    // 4. Integrales con saturación
+    // 4. CUARTO: Actualizar integrales con saturación específica por eje
     integral_phi = constrain(integral_phi + error_phi * dt, -MAX_INTEGRAL_ROLL_PITCH, MAX_INTEGRAL_ROLL_PITCH);
     integral_theta = constrain(integral_theta + error_theta * dt, -MAX_INTEGRAL_ROLL_PITCH, MAX_INTEGRAL_ROLL_PITCH);
     integral_psi = constrain(integral_psi + error_psi * dt, -MAX_INTEGRAL_YAW, MAX_INTEGRAL_YAW);
 
-    // Aplicar control LQR adaptado
-    tau_x = gain_scale * (Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi) - Kc_at[0][3] * x_c[3];
-    tau_y = gain_scale * (Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta) - Kc_at[1][4] * x_c[4];
-    tau_z = gain_scale * (Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi) - Kc_at[2][5] * x_c[5];
+    // 5. QUINTO: Control LQR usando las integrales actualizadas
+    tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * x_c[3];
+    tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta - Kc_at[1][4] * x_c[4];
+    tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * AngleYaw - Kc_at[2][5] * RateYaw;
 
-    // Escalar torques a PWM
+    // 5. Escalar torques a PWM (ejemplo: 500 μs/N·m)
     tau_x *= TORQUE_SCALE;
     tau_y *= TORQUE_SCALE;
-    tau_z *= TORQUE_SCALE;
 
     applyControl(tau_x, tau_y, tau_z);
   }
@@ -202,6 +195,7 @@ void loop_manual_mode(float dt)
   {
     applyControl(0, 0, 0);
     apagarMotores();
+    // Resetear integrales cuando el throttle está bajo
     integral_phi = integral_theta = integral_psi = 0;
   }
 }

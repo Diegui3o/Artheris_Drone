@@ -32,9 +32,9 @@ extern const int mot3_pin;
 extern const int mot4_pin;
 
 // Variables de estado - OPTIMIZADO: quitado volatile innecesario
-extern float phi_ref, theta_ref, psi_ref; // Solo referencias locales - OPTIMIZADO
+extern int phi_ref, theta_ref, psi_ref;
 
-extern float integral_phi, integral_theta, integral_psi; // Solo integrales locales - OPTIMIZADO
+extern float integral_phi, integral_theta, integral_psi;
 
 // === Variables para control avanzado ===
 // Modo deslizante
@@ -190,5 +190,16 @@ extern float q0, q1, q2, q3;
 
 // Euler angles in radians (converted from quaternions)
 extern float yaw;
+
+// Function declarations
+float sat(float x, float epsilon);
+
+extern float AngleRoll_ind;
+extern float AnglePitch_ind;
+
+extern float k1;
+extern float g1;
+extern float k2;
+extern float g2;
 
 #endif // VARIABLES_H
