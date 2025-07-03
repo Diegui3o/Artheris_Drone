@@ -18,7 +18,7 @@ float AccZCalibration = -0.07;
 
 int pinLed = 2;
 
-int ESCfreq = 500;
+int ESCfreq = 250;
 
 volatile float AngleRoll_est;
 volatile float AnglePitch_est;
@@ -40,7 +40,7 @@ Servo mot2;
 Servo mot3;
 Servo mot4;
 
-const int mot1_pin = 15;
+const int mot1_pin = 13;
 const int mot2_pin = 12;
 const int mot3_pin = 14;
 const int mot4_pin = 27;
@@ -88,9 +88,9 @@ float complementaryAnglePitch = 0.0f;
 float MotorInput1, MotorInput2, MotorInput3, MotorInput4; // OPTIMIZADO: solo salida de control
 
 // Variables de estado
-float phi_ref = 0.0;  
-float theta_ref = 0.0;
-float psi_ref = 0.0;  
+int phi_ref = 0.0;  
+int theta_ref = 0.0;
+int psi_ref = 0.0;  
 float integral_phi;   
 float integral_theta; 
 float integral_psi;   
@@ -127,7 +127,7 @@ float residual_history[window_size] = {0};
 int residual_index = 0;
 float c_threshold = 0.01;
 
-float dt = 0.009;       // Paso de tiempo (ajustar según la frecuencia de muestreo)
+float dt = 0.41;       // Paso de tiempo (ajustar según la frecuencia de muestreo)
 float Q_angle = 0.001f; // Covarianza del ruido del proceso (ángulo)
 float Q_gyro = 0.003;   // Covarianza del ruido del proceso (giroscopio)
 float R_angle = 0.03;   // Covarianza del ruido de medición (acelerómetro)
@@ -158,3 +158,18 @@ float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;
 
 // Euler angles in radians (converted from quaternions)
 float yaw = 0.0f;
+
+// === UTILITY FUNCTIONS ===
+float sat(float x, float epsilon) {
+  if (x > epsilon) return 1.0;
+  if (x < -epsilon) return -1.0;
+  return x / epsilon;
+}
+
+float AngleRoll_ind;
+float AnglePitch_ind;
+
+float k1;
+float g1;
+float k2;
+float g2;
