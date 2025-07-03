@@ -1,252 +1,172 @@
-#include <Arduino.h>
-#include <Wire.h>
-#include <QMC5883LCompass.h>
-#include <MPU6050.h>
+#include <MPU6050.h> // Asegura que el compilador conoce la clase MPU6050
 #include "variables.h"
-#include "mpu.h"
 
-QMC5883LCompass compass;
-MPU6050 mpu;
+// Define global variables
+float vel_z = 0.0;
+float error_z = 0.0;
 
-int yawOffset = 0;
-const int YAW_FILTER_SIZE = 5;
-float yawHistory[YAW_FILTER_SIZE] = {0};
-int yawIndex = 0;
-const float MAG_THRESHOLD = 1500.0; // Ajustar según pruebas
+MPU6050 accelgyro;
 
-// Variable para umbral de compensación configurable
-static float compensationThreshold = 2.0; // Grados mínimos para activar compensación
+volatile float RatePitch = 0.0, RateRoll = 0.0, RateYaw = 0.0;
 
-// Función para el filtro de Kalman (roll)
-double Kalman_filter(Kalman &kf, float newAngle, float newRate, float dt)
-{
-  // Predicción:
-  double rate = newRate - kf.bias;
-  kf.angle += dt * rate;
+float RateCalibrationRoll = 0.27;
+float RateCalibrationPitch = -0.85;
+float RateCalibrationYaw = -2.09;
+float AccXCalibration = 0.03;
+float AccYCalibration = 0.01;
+float AccZCalibration = -0.07;
 
-  // Actualización de la matriz de error
-  kf.P[0][0] += dt * (dt * kf.P[1][1] - kf.P[0][1] - kf.P[1][0] + Q_angle);
-  kf.P[0][1] -= dt * kf.P[1][1];
-  kf.P[1][0] -= dt * kf.P[1][1];
-  kf.P[1][1] += Q_bias * dt;
+int pinLed = 2;
 
-  // Medición:
-  float S = kf.P[0][0] + R_measure;
-  float K0 = kf.P[0][0] / S;
-  float K1 = kf.P[1][0] / S;
+int ESCfreq = 500;
 
-  // Actualización con la medición (newAngle)
-  float y = newAngle - kf.angle;
-  kf.angle += K0 * y;
-  kf.bias += K1 * y;
+volatile float AngleRoll_est;
+volatile float AnglePitch_est;
+float tau_x, tau_y, tau_z;
+float error_phi, error_theta, error_psi;
 
-  // Actualizar la matriz de covarianza
-  double P00_temp = kf.P[0][0];
-  double P01_temp = kf.P[0][1];
+int buffersize = 1000; // Cantidad de lecturas para promediar
+int acel_deadzone = 8; // Zona muerta del acelerómetro
+int giro_deadzone = 1; // Zona muerta del giroscopio
 
-  kf.P[0][0] -= K0 * P00_temp;
-  kf.P[0][1] -= K0 * P01_temp;
-  kf.P[1][0] -= K1 * P00_temp;
-  kf.P[1][1] -= K1 * P01_temp;
+int mean_ax, mean_ay, mean_az, mean_gx, mean_gy, mean_gz;
+int ax_offset, ay_offset, az_offset, gx_offset, gy_offset, gz_offset;
 
-  return kf.angle;
+// Variables para la calibración
+uint32_t LoopTimer;
+
+Servo mot1;
+Servo mot2;
+Servo mot3;
+Servo mot4;
+
+const int mot1_pin = 15;
+const int mot2_pin = 12;
+const int mot3_pin = 14;
+const int mot4_pin = 27;
+
+int16_t ax, ay, az, gx, gy, gz;
+
+volatile uint32_t current_time;
+volatile uint32_t last_channel_1 = 0;
+volatile uint32_t last_channel_2 = 0;
+volatile uint32_t last_channel_3 = 0;
+volatile uint32_t last_channel_4 = 0;
+volatile uint32_t last_channel_5 = 0;
+volatile uint32_t last_channel_6 = 0;
+volatile uint32_t timer_1;
+volatile uint32_t timer_2;
+volatile uint32_t timer_3;
+volatile uint32_t timer_4;
+volatile uint32_t timer_5;
+volatile uint32_t timer_6;
+volatile int ReceiverValue[6];
+const int channel_1_pin = 34;
+const int channel_2_pin = 35;
+const int channel_3_pin = 32;
+const int channel_4_pin = 33;
+const int channel_5_pin = 25;
+const int channel_6_pin = 26;
+
+int ThrottleIdle = 1170;
+int ThrottleCutOff = 1000;
+
+// Kalman filters for angle mode - OPTIMIZADO: quitado volatile innecesario
+volatile float AccX, AccY, AccZ;                            // Mantener volatile - compartido entre tareas
+volatile float AngleRoll = 0, AnglePitch = 0, AngleYaw = 0; // Mantener volatile - compartido entre tareas
+float GyroXdps, GyroYdps, GyroZdps;                         // OPTIMIZADO: solo uso local
+int DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
+int InputRoll, InputThrottle, InputPitch, InputYaw;
+int DesiredAngleRoll, DesiredAnglePitch, DesiredAngleYaw;
+float ErrorAngleRoll, ErrorAnglePitch;         // OPTIMIZADO: solo cálculos locales
+float PrevErrorAngleRoll, PrevErrorAnglePitch; // OPTIMIZADO: solo cálculos locales
+float PrevItermAngleRoll, PrevItermAnglePitch; // OPTIMIZADO: solo cálculos locales
+
+float complementaryAngleRoll = 0.0f;
+float complementaryAnglePitch = 0.0f;
+
+float MotorInput1, MotorInput2, MotorInput3, MotorInput4; // OPTIMIZADO: solo salida de control
+
+// Variables de estado
+int phi_ref = 0.0;  
+int theta_ref = 0.0;
+int psi_ref = 0.0;  
+float integral_phi;   
+float integral_theta; 
+float integral_psi;   
+
+// === Variables para control avanzado ===
+// Modo deslizante
+float S_phi = 0, S_theta = 0; // Superficies deslizantes
+float lambda_sliding = 0.5;   // Parámetro de deslizamiento
+
+// Feedforward
+float ff_phi = 0, ff_theta = 0, ff_psi = 0; // Términos feedforward
+float prev_phi_ref = 0, prev_theta_ref = 0; // Referencias anteriores para derivada
+
+float accAngleRoll;  // Ángulo de roll (grados)
+float accAnglePitch; // Ángulo de pitch (grados)
+float gyroRateRoll;
+float gyroRatePitch;
+float accAngleY;
+float accAngleX;
+
+float residual_history_roll[window_size] = {0};
+float residual_history_pitch[window_size] = {0};
+int residual_index_roll, residual_index_pitch;
+float R_angle_roll, R_angle_pitch;
+float lambda_roll, lambda_pitch;
+
+// === Configuración del sistema ===
+const uint16_t LOOP_FREQ = 100;               // Frecuencia del loop en Hz
+const float DT = 1.0f / LOOP_FREQ;            // Paso de tiempo
+const uint32_t LOOP_US = 1000000 / LOOP_FREQ; // Microsegundos por ciclo
+const int IDLE_PWM = 1000;
+float lambda = 0.96;
+float residual_history[window_size] = {0};
+int residual_index = 0;
+float c_threshold = 0.01;
+
+float dt = 0.004;       // Paso de tiempo (ajustar según la frecuencia de muestreo)
+float Q_angle = 0.001f; // Covarianza del ruido del proceso (ángulo)
+float Q_gyro = 0.003;   // Covarianza del ruido del proceso (giroscopio)
+float R_angle = 0.03;   // Covarianza del ruido de medición (acelerómetro)
+
+// --- CALIBRATION OFFSETS ---
+double accelOffsetX = 0, accelOffsetY = 0, accelOffsetZ = 0;
+double gyroXOffset = 0, gyroYOffset = 0, gyroZOffset = 0;
+
+// --- FILTER VARIABLES ---
+double pitch = 0, roll = 0;
+double Q_bias = 0.003f;
+double R_measure = 0.03f;
+double angle = 0.0f, bias = 0.0f, rate = 0;
+double P[2][2] = {{0.0, 0.0}, {0.0, 0.0}};
+
+Kalman kalmanRoll = {0, 0, {1, 0, 0, 1}};
+Kalman kalmanPitch = {0, 0, {1, 0, 0, 1}};
+Kalman kalmanYaw = {0, 0, {1, 0, 0, 1}};
+
+unsigned long lastTime;
+float T = 0.0f;
+
+float magbias[3] = {0, 0, 0};  // Reemplaza estos valores tras calibrar
+float magscale[3] = {1, 1, 1}; // Reemplaza estos valores tras calibrar
+
+// Quaternion variables for orientation (initialize to identity quaternion)
+float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;
+
+// Euler angles in radians (converted from quaternions)
+float yaw = 0.0f;
+
+// === UTILITY FUNCTIONS ===
+float sat(float x, float epsilon) {
+  if (x > epsilon) return 1.0;
+  if (x < -epsilon) return -1.0;
+  return x / epsilon;
 }
 
-void gyro_signals(void)
-{
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1A);
-  Wire.write(0x05);
-  Wire.endTransmission();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1C);
-  Wire.write(0x10);
-  Wire.endTransmission();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x3B);
-  Wire.endTransmission();
-  Wire.requestFrom(0x68, 6);
-  int16_t AccXLSB = Wire.read() << 8 | Wire.read();
-  int16_t AccYLSB = Wire.read() << 8 | Wire.read();
-  int16_t AccZLSB = Wire.read() << 8 | Wire.read();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1B);
-  Wire.write(0x8);
-  Wire.endTransmission();
-  Wire.beginTransmission(0x68);
-  Wire.write(0x43);
-  Wire.endTransmission();
-  Wire.requestFrom(0x68, 6);
-  int16_t GyroX = Wire.read() << 8 | Wire.read();
-  int16_t GyroY = Wire.read() << 8 | Wire.read();
-  int16_t GyroZ = Wire.read() << 8 | Wire.read();
-
-  gyroRateRoll = GyroX / 65.5;
-  gyroRatePitch = GyroY / 65.5;
-  RateYaw = GyroZ / 65.5;
-
-  AccX = (float)AccXLSB / 4096;
-  AccY = (float)AccYLSB / 4096;
-  AccZ = (float)AccZLSB / 4096;
-
-  AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 1 / (3.142 / 180);
-  AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 1 / (3.142 / 180);
-
-  // Cálculo del ángulo estimado a partir del acelerómetro (usando atan2 puede ser más robusto)
-  accAngleRoll = atan2(AccY, sqrt(AccX * AccX + AccZ * AccZ)) * 180.0 / PI;
-  accAnglePitch = -atan2(AccX, sqrt(AccY * AccY + AccZ * AccZ)) * 180.0 / PI;
-
-  // Utiliza las tasas del giroscopio
-  float gyroRateRoll_local = gyroRateRoll;
-  float gyroRatePitch_local = gyroRatePitch;
-
-  // Actualización del filtro de Kalman para cada eje
-  AngleRoll = Kalman_filter(kalmanRoll, AngleRoll_est, gyroRateRoll_local, dt);
-  AnglePitch = Kalman_filter(kalmanPitch, AnglePitch_est, gyroRatePitch_local, dt);
-}
-
-void loop_yaw()
-{
-  compass.read();
-  float heading = compass.getAzimuth() * PI / 180.0; // Ángulo Yaw absoluto del magnetómetro (convertido a radianes)
-
-  // Normalizar el heading entre 0 y 2*PI
-  if (heading < 0)
-    heading += 2 * PI;
-  if (heading > 2 * PI)
-    heading -= 2 * PI;
-
-  // Fusión sensor con filtro complementario - más peso al magnetómetro para corregir drift
-  // AngleYaw = 0.50 * (yaw + RateYaw * dt) + 0.50 * heading;
-}
-
-void setupMPU()
-{
-  Serial.begin(115200);
-  Wire.begin(21, 22); // SDA = GPIO21, SCL = GPIO22
-
-  // Inicializar magnetómetro
-  compass.init();
-  Serial.println("Inicializando magnetómetro...");
-
-  // Verificar si el magnetómetro responde
-  compass.read();
-
-  mpu.initialize();
-  // Calibración automática al inicio
-  compass.setCalibration(-1767, 1345, -1503, 1199, -1325, 1567);
-  delay(2000); // Esperar estabilización
-
-  calibrateSensors();
-  Serial.println("Calibración completada.");
-}
-
-// === CALIBRACIÓN DEL MPU6050 ===
-void calibrateSensors()
-{
-  Serial.println("\nCalibrando sensores...");
-
-  accelgyro.setXAccelOffset(0);
-  accelgyro.setYAccelOffset(0);
-  accelgyro.setZAccelOffset(0);
-  accelgyro.setXGyroOffset(0);
-  accelgyro.setYGyroOffset(0);
-  accelgyro.setZGyroOffset(0);
-
-  meansensors();
-  Serial.println("\nCalculando offsets...");
-  calibration();
-
-  accelgyro.setXAccelOffset(ax_offset);
-  accelgyro.setYAccelOffset(ay_offset);
-  accelgyro.setZAccelOffset(az_offset);
-  accelgyro.setXGyroOffset(gx_offset);
-  accelgyro.setYGyroOffset(gy_offset);
-  accelgyro.setZGyroOffset(gz_offset);
-
-  Serial.println("Calibración completada.");
-}
-
-void meansensors()
-{
-  long i = 0, buff_ax = 0, buff_ay = 0, buff_az = 0, buff_gx = 0, buff_gy = 0, buff_gz = 0;
-  while (i < (buffersize + 101))
-  {
-    accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-    if (i > 100 && i <= (buffersize + 100))
-    {
-      buff_ax += ax;
-      buff_ay += ay;
-      buff_az += az;
-      buff_gx += gx;
-      buff_gy += gy;
-      buff_gz += gz;
-    }
-    i++;
-    delay(2);
-  }
-
-  mean_ax = buff_ax / buffersize;
-  mean_ay = buff_ay / buffersize;
-  mean_az = buff_az / buffersize;
-  mean_gx = buff_gx / buffersize;
-  mean_gy = buff_gy / buffersize;
-  mean_gz = buff_gz / buffersize;
-}
-
-void calibration()
-{
-  ax_offset = -mean_ax / 8;
-  ay_offset = -mean_ay / 8;
-  az_offset = (16384 - mean_az) / 8;
-
-  gx_offset = -mean_gx / 4;
-  gy_offset = -mean_gy / 4;
-  gz_offset = -mean_gz / 4;
-
-  while (1)
-  {
-    int ready = 0;
-    accelgyro.setXAccelOffset(ax_offset);
-    accelgyro.setYAccelOffset(ay_offset);
-    accelgyro.setZAccelOffset(az_offset);
-    accelgyro.setXGyroOffset(gx_offset);
-    accelgyro.setYGyroOffset(gy_offset);
-    accelgyro.setZGyroOffset(gz_offset);
-
-    meansensors();
-
-    if (abs(mean_ax) <= acel_deadzone)
-      ready++;
-    else
-      ax_offset -= mean_ax / acel_deadzone;
-
-    if (abs(mean_ay) <= acel_deadzone)
-      ready++;
-    else
-      ay_offset -= mean_ay / acel_deadzone;
-
-    if (abs(16384 - mean_az) <= acel_deadzone)
-      ready++;
-    else
-      az_offset += (16384 - mean_az) / acel_deadzone;
-
-    if (abs(mean_gx) <= giro_deadzone)
-      ready++;
-    else
-      gx_offset -= mean_gx / (giro_deadzone + 1);
-
-    if (abs(mean_gy) <= giro_deadzone)
-      ready++;
-    else
-      gy_offset -= mean_gy / (giro_deadzone + 1);
-
-    if (abs(mean_gz) <= giro_deadzone)
-      ready++;
-    else
-      gz_offset -= mean_gz / (giro_deadzone + 1);
-
-    if (ready == 6)
-      break;
-  }
-}
+float k1;
+float g1;
+float k2;
+float g2;

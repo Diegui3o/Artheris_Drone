@@ -21,8 +21,8 @@ const int websocket_port = 3003;               // Puerto debe coincidir con el s
 const char *websocket_path = "/esp32";
 
 // Configuración IP fija
-IPAddress local_IP(192, 168, 1, 200); // IP fija para el ESP32 en la red Wi-Fi
-IPAddress gateway(192, 168, 1, 1);    // Puerta de enlace de tu red Wi-Fi
+IPAddress local_IP(192, 168, 1, 200);           // IP fija para el ESP32 en la red Wi-Fi
+IPAddress gateway(192, 168, 1, 1);              // Puerta de enlace de tu red Wi-Fi
 IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);
 IPAddress secondaryDNS(8, 8, 4, 4);
@@ -248,7 +248,7 @@ void TaskControlCode(void *pvParameters)
         {
             static uint32_t control_last_time = 0;
             float control_dt = (micros() - control_last_time) / 1e6;
-            if (control_dt >= 0.001) // 25Hz para control
+            if (control_dt >= 0.001 ) // 25Hz para control
             {
                 if (xSemaphoreTake(sensorMutex, 0) == pdTRUE) // No bloquear
                 {

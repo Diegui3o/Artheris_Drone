@@ -10,6 +10,14 @@
 
 void setupMotores()
 {
+    Wire.setClock(400000);
+    Wire.begin();
+    delay(250);
+    Wire.beginTransmission(0x68);
+    Wire.write(0x6B);
+    Wire.write(0x00);
+    Wire.endTransmission();
+
     ESP32PWM::allocateTimer(0);
     ESP32PWM::allocateTimer(1);
     ESP32PWM::allocateTimer(2);
