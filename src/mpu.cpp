@@ -88,10 +88,10 @@ void setupMPU()
   success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_MAGNETIC_FIELD_UNCALIBRATED) == ICM_20948_Stat_Ok);
 
   // Configurar ODR para cada sensor
-  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Quat6, 10) == ICM_20948_Stat_Ok);        // ~5Hz
-  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Accel, 10) == ICM_20948_Stat_Ok);        // ~5Hz
-  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Gyro, 10) == ICM_20948_Stat_Ok);         // ~5Hz
-  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Cpass, 10) == ICM_20948_Stat_Ok);        // ~5Hz
+  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Quat6, 10) == ICM_20948_Stat_Ok); // ~5Hz
+  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Accel, 10) == ICM_20948_Stat_Ok); // ~5Hz
+  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Gyro, 10) == ICM_20948_Stat_Ok);  // ~5Hz
+  success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Cpass, 10) == ICM_20948_Stat_Ok); // ~5Hz
 
   // Habilitar FIFO y DMP
   success &= (myICM.enableFIFO() == ICM_20948_Stat_Ok);
@@ -107,10 +107,10 @@ void setupMPU()
   {
     SERIAL_PORT.println(F("Enable DMP failed!"));
     SERIAL_PORT.println(F("Please ensure '#define ICM_20948_USE_DMP' is enabled in ICM_20948_C.h"));
-    while (true); // Error fatal, detener ejecución
+    while (true)
+      ; // Error fatal, detener ejecución
   }
 }
-
 
 void gyro_signals()
 {
@@ -126,7 +126,7 @@ void gyro_signals()
       double q1 = ((double)data.Quat6.Data.Q1) / 1073741824.0;
       double q2 = ((double)data.Quat6.Data.Q2) / 1073741824.0;
       double q3 = ((double)data.Quat6.Data.Q3) / 1073741824.0;
-      double q0 = sqrt(1.0 - (q1*q1 + q2*q2 + q3*q3)); // Calcular q0
+      double q0 = sqrt(1.0 - (q1 * q1 + q2 * q2 + q3 * q3)); // Calcular q0
 
       // Reordenar según convención deseada
       double qw = q0;
@@ -162,9 +162,9 @@ void gyro_signals()
     // --- Giroscopio crudo ---
     if (data.header & DMP_header_bitmap_Gyro)
     {
-      gyroRateRoll  = (float)data.Raw_Gyro.Data.X / 65.5; // Velocidad angular en X (Roll rate)
+      gyroRateRoll = (float)data.Raw_Gyro.Data.X / 65.5;  // Velocidad angular en X (Roll rate)
       gyroRatePitch = (float)data.Raw_Gyro.Data.Y / 65.5; // Velocidad angular en Y (Pitch rate)
-      RateYaw       = (float)data.Raw_Gyro.Data.Z / 65.5; // Velocidad angular en Z (Yaw rate)
+      RateYaw = (float)data.Raw_Gyro.Data.Z / 65.5;       // Velocidad angular en Z (Yaw rate)
     }
 
     // --- Magnetómetro (opcional) ---
@@ -173,10 +173,9 @@ void gyro_signals()
       float magX = (float)data.Compass.Data.X;
       float magY = (float)data.Compass.Data.Y;
       float magZ = (float)data.Compass.Data.Z;
-
     }
-    
-     // Utiliza las tasas del giroscopio
+
+    // Utiliza las tasas del giroscopio
     float gyroRateRoll_local = gyroRateRoll;
     float gyroRatePitch_local = gyroRatePitch;
 
