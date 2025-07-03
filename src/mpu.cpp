@@ -52,7 +52,7 @@ double Kalman_filter(Kalman &kf, float newAngle, float newRate, float dt)
   return kf.angle;
 }
 
-void gyro_signals(void)
+void gyro_signals()
 {
   Wire.beginTransmission(0x68);
   Wire.write(0x1A);
