@@ -3,77 +3,90 @@
 #include <Wire.h>
 #include "I2Cdev.h"
 #include "MPU6050.h"
-#include <ESP32Servo.h>
 #include <piloto_mode.h>
 #include "variables.h"
 #include "mpu.h"
 
-void setupMotores()
-{
-    Wire.setClock(400000);
-    Wire.begin();
-    delay(250);
-    Wire.beginTransmission(0x68);
-    Wire.write(0x6B);
-    Wire.write(0x00);
-    Wire.endTransmission();
+// Pines y canales PWM para los motores
+#define MOT1_PIN 15
+#define MOT2_PIN 12
+#define MOT3_PIN 14
+#define MOT4_PIN 27
 
-    ESP32PWM::allocateTimer(0);
-    ESP32PWM::allocateTimer(1);
-    ESP32PWM::allocateTimer(2);
-    ESP32PWM::allocateTimer(3);
+#define MOT1_CH 0
+#define MOT2_CH 1
+#define MOT3_CH 2
+#define MOT4_CH 3
 
-    mot1.attach(mot1_pin, 1000, 2000);
-    mot2.attach(mot2_pin, 1000, 2000);
-    mot3.attach(mot3_pin, 1000, 2000);
-    mot4.attach(mot4_pin, 1000, 2000);
-    delay(1000);
+#define PWM_FREQ 50      // 50Hz para ESC estándar
+#define PWM_RES 16       // 16 bits de resolución
 
-    mot1.writeMicroseconds(IDLE_PWM);
-    mot2.writeMicroseconds(IDLE_PWM);
-    mot3.writeMicroseconds(IDLE_PWM);
-    mot4.writeMicroseconds(IDLE_PWM);
-    delay(2000);
+void writeMotorMicroseconds(uint8_t channel, uint16_t us) {
+    // Para 50Hz y 16 bits: 1 ciclo = 20,000us, 2^16 = 65536
+    // Duty = (us / 20000) * 65535
+    uint32_t duty = (uint32_t)us * 65535 / 20000;
+    ledcWrite(channel, duty);
+}
 
-    mot1.attach(mot1_pin, 1000, 2000);
-    delay(1000);
-    mot1.setPeriodHertz(ESCfreq);
-    delay(100);
-    mot2.attach(mot2_pin, 1000, 2000);
-    delay(1000);
-    mot2.setPeriodHertz(ESCfreq);
-    delay(100);
-    mot3.attach(mot3_pin, 1000, 2000);
-    delay(1000);
-    mot3.setPeriodHertz(ESCfreq);
-    delay(100);
-    mot4.attach(mot4_pin, 1000, 2000);
-    delay(1000);
-    mot4.setPeriodHertz(ESCfreq);
-    delay(100);
+// =====================
+// Calibración de ESC
+// =====================
+// ¡ATENCIÓN! Realiza este procedimiento SIN HÉLICES por seguridad.
+// Llama a esta función SOLO cuando quieras calibrar los ESC.
+void calibrarESC() {
+    // 1. Señal máxima (2000us) durante 4 segundos
+    writeMotorMicroseconds(MOT1_CH, 2000);
+    writeMotorMicroseconds(MOT2_CH, 2000);
+    writeMotorMicroseconds(MOT3_CH, 2000);
+    writeMotorMicroseconds(MOT4_CH, 2000);
+    delay(4000); // Espera tonos de calibración
 
-    mot1.writeMicroseconds(IDLE_PWM);
-    mot2.writeMicroseconds(IDLE_PWM);
-    mot3.writeMicroseconds(IDLE_PWM);
-    mot4.writeMicroseconds(IDLE_PWM);
-    delay(2000);
-    Serial.println("Motores inicializados");
+    // 2. Señal mínima (1000us) durante 4 segundos
+    writeMotorMicroseconds(MOT1_CH, 1000);
+    writeMotorMicroseconds(MOT2_CH, 1000);
+    writeMotorMicroseconds(MOT3_CH, 1000);
+    writeMotorMicroseconds(MOT4_CH, 1000);
+    delay(4000); // Espera tonos de confirmación
+
+    // 3. Listo, los ESC están calibrados
+}
+
+
+void setupMotores() {
+    // =======
+    // Si necesitas calibrar los ESC, descomenta la siguiente línea y sube el código:
+    // calibrarESC();
+    // Luego de calibrar, vuelve a comentar esta línea y sube el firmware normal.
+    // =======
+    ledcSetup(MOT1_CH, PWM_FREQ, PWM_RES);
+    ledcAttachPin(MOT1_PIN, MOT1_CH);
+    ledcSetup(MOT2_CH, PWM_FREQ, PWM_RES);
+    ledcAttachPin(MOT2_PIN, MOT2_CH);
+    ledcSetup(MOT3_CH, PWM_FREQ, PWM_RES);
+    ledcAttachPin(MOT3_PIN, MOT3_CH);
+    ledcSetup(MOT4_CH, PWM_FREQ, PWM_RES);
+    ledcAttachPin(MOT4_PIN, MOT4_CH);
+
+    writeMotorMicroseconds(MOT1_CH, 1000);
+    writeMotorMicroseconds(MOT2_CH, 1000);
+    writeMotorMicroseconds(MOT3_CH, 1000);
+    writeMotorMicroseconds(MOT4_CH, 1000);
 }
 
 void apagarMotores()
 {
-    mot1.writeMicroseconds(1000); // Apagar los motores
-    mot2.writeMicroseconds(1000);
-    mot3.writeMicroseconds(1000);
-    mot4.writeMicroseconds(1000);
+    writeMotorMicroseconds(MOT1_CH, 1000);
+    writeMotorMicroseconds(MOT2_CH, 1000);
+    writeMotorMicroseconds(MOT3_CH, 1000);
+    writeMotorMicroseconds(MOT4_CH, 1000);
 }
 
 void encenderMotores(int speed)
 {
-    mot1.writeMicroseconds(speed);
-    mot2.writeMicroseconds(speed);
-    mot3.writeMicroseconds(speed);
-    mot4.writeMicroseconds(speed);
+    writeMotorMicroseconds(MOT1_CH, speed);
+    writeMotorMicroseconds(MOT2_CH, speed);
+    writeMotorMicroseconds(MOT3_CH, speed);
+    writeMotorMicroseconds(MOT4_CH, speed);
 }
 
 // === CONTROL A LOS MOTORES CON SATURACION COLECTIVA ===
@@ -135,8 +148,8 @@ void applyControl(float tau_x, float tau_y, float tau_z)
     MotorInput3 = constrain(f[2], f_min, f_max);
     MotorInput4 = constrain(f[3], f_min, f_max);
 
-    mot1.writeMicroseconds(round(MotorInput1));
-    mot2.writeMicroseconds(round(MotorInput2));
-    mot3.writeMicroseconds(round(MotorInput3));
-    mot4.writeMicroseconds(round(MotorInput4));
+    writeMotorMicroseconds(MOT1_CH, round(MotorInput1));
+    writeMotorMicroseconds(MOT2_CH, round(MotorInput2));
+    writeMotorMicroseconds(MOT3_CH, round(MotorInput3));
+    writeMotorMicroseconds(MOT4_CH, round(MotorInput4));
 }

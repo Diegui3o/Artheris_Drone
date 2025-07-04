@@ -2,38 +2,40 @@
 #include "variables.h"
 
 // Define global variables
-float vel_z = 0.0;
-float error_z = 0.0;
+float vel_z = 0.0f;
+float error_z = 0.0f;
 
 MPU6050 accelgyro;
 
-volatile float RatePitch = 0.0, RateRoll = 0.0, RateYaw = 0.0;
+// Solo RatePitch, RateRoll y RateYaw deben ser volatile si se modifican en ISR
+volatile float RatePitch = 0.0f;
+volatile float RateRoll = 0.0f;
+volatile float RateYaw = 0.0f;
 
-float RateCalibrationRoll = 0.27;
-float RateCalibrationPitch = -0.85;
-float RateCalibrationYaw = -2.09;
-float AccXCalibration = 0.03;
-float AccYCalibration = 0.01;
-float AccZCalibration = -0.07;
+float RateCalibrationRoll = 0.27f;
+float RateCalibrationPitch = -0.85f;
+float RateCalibrationYaw = -2.09f;
+float AccXCalibration = 0.03f;
+float AccYCalibration = 0.01f;
+float AccZCalibration = -0.07f;
 
 int pinLed = 2;
-
 int ESCfreq = 500;
 
-volatile float AngleRoll_est;
-volatile float AnglePitch_est;
-float tau_x, tau_y, tau_z;
-float error_phi, error_theta, error_psi;
+// Solo marcar como volatile si se usan en ISR
+volatile float AngleRoll_est = 0.0f;
+volatile float AnglePitch_est = 0.0f;
+float tau_x = 0.0f, tau_y = 0.0f, tau_z = 0.0f;
+float error_phi = 0.0f, error_theta = 0.0f, error_psi = 0.0f;
 
-int buffersize = 1000; // Cantidad de lecturas para promediar
-int acel_deadzone = 8; // Zona muerta del acelerómetro
-int giro_deadzone = 1; // Zona muerta del giroscopio
+int buffersize = 1000;
+int acel_deadzone = 8;
+int giro_deadzone = 1;
 
-int mean_ax, mean_ay, mean_az, mean_gx, mean_gy, mean_gz;
-int ax_offset, ay_offset, az_offset, gx_offset, gy_offset, gz_offset;
+int mean_ax = 0, mean_ay = 0, mean_az = 0, mean_gx = 0, mean_gy = 0, mean_gz = 0;
+int ax_offset = 0, ay_offset = 0, az_offset = 0, gx_offset = 0, gy_offset = 0, gz_offset = 0;
 
-// Variables para la calibración
-uint32_t LoopTimer;
+uint32_t LoopTimer = 0;
 
 Servo mot1;
 Servo mot2;
@@ -45,22 +47,23 @@ const int mot2_pin = 12;
 const int mot3_pin = 14;
 const int mot4_pin = 27;
 
-int16_t ax, ay, az, gx, gy, gz;
+int16_t ax = 0, ay = 0, az = 0, gx = 0, gy = 0, gz = 0;
 
-volatile uint32_t current_time;
+// Timers y canales de radio: deben ser volatile
+volatile uint32_t current_time = 0;
 volatile uint32_t last_channel_1 = 0;
 volatile uint32_t last_channel_2 = 0;
 volatile uint32_t last_channel_3 = 0;
 volatile uint32_t last_channel_4 = 0;
 volatile uint32_t last_channel_5 = 0;
 volatile uint32_t last_channel_6 = 0;
-volatile uint32_t timer_1;
-volatile uint32_t timer_2;
-volatile uint32_t timer_3;
-volatile uint32_t timer_4;
-volatile uint32_t timer_5;
-volatile uint32_t timer_6;
-volatile int ReceiverValue[6];
+volatile uint32_t timer_1 = 0;
+volatile uint32_t timer_2 = 0;
+volatile uint32_t timer_3 = 0;
+volatile uint32_t timer_4 = 0;
+volatile uint32_t timer_5 = 0;
+volatile uint32_t timer_6 = 0;
+volatile int ReceiverValue[6] = {0};
 const int channel_1_pin = 34;
 const int channel_2_pin = 35;
 const int channel_3_pin = 32;
@@ -71,29 +74,30 @@ const int channel_6_pin = 26;
 int ThrottleIdle = 1170;
 int ThrottleCutOff = 1000;
 
-// Kalman filters for angle mode - OPTIMIZADO: quitado volatile innecesario
-volatile float AccX, AccY, AccZ;                            // Mantener volatile - compartido entre tareas
-volatile float AngleRoll = 0, AnglePitch = 0, AngleYaw = 0; // Mantener volatile - compartido entre tareas
-float GyroXdps, GyroYdps, GyroZdps;                         // OPTIMIZADO: solo uso local
-int DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
-int InputRoll, InputThrottle, InputPitch, InputYaw;
-int DesiredAngleRoll, DesiredAnglePitch, DesiredAngleYaw;
-float ErrorAngleRoll, ErrorAnglePitch;         // OPTIMIZADO: solo cálculos locales
-float PrevErrorAngleRoll, PrevErrorAnglePitch; // OPTIMIZADO: solo cálculos locales
-float PrevItermAngleRoll, PrevItermAnglePitch; // OPTIMIZADO: solo cálculos locales
+// Solo AccX, AccY, AccZ y los ángulos estimados deberían ser volatile si los modifica una ISR
+volatile float AccX = 0.0f, AccY = 0.0f, AccZ = 0.0f;
+volatile float AngleRoll = 0.0f, AnglePitch = 0.0f, AngleYaw = 0.0f;
+
+float GyroXdps = 0.0f, GyroYdps = 0.0f, GyroZdps = 0.0f;
+int DesiredRateRoll = 0, DesiredRatePitch = 0, DesiredRateYaw = 0;
+int InputRoll = 0, InputThrottle = 0, InputPitch = 0, InputYaw = 0;
+int DesiredAngleRoll = 0, DesiredAnglePitch = 0, DesiredAngleYaw = 0;
+float ErrorAngleRoll = 0.0f, ErrorAnglePitch = 0.0f;
+float PrevErrorAngleRoll = 0.0f, PrevErrorAnglePitch = 0.0f;
+float PrevItermAngleRoll = 0.0f, PrevItermAnglePitch = 0.0f;
 
 float complementaryAngleRoll = 0.0f;
 float complementaryAnglePitch = 0.0f;
 
-float MotorInput1, MotorInput2, MotorInput3, MotorInput4; // OPTIMIZADO: solo salida de control
+float MotorInput1 = 0.0f, MotorInput2 = 0.0f, MotorInput3 = 0.0f, MotorInput4 = 0.0f;
 
-// Variables de estado
-int phi_ref = 0.0;
-int theta_ref = 0.0;
-int psi_ref = 0.0;
-float integral_phi;
-float integral_theta;
-float integral_psi;
+// Variables de estado (referencias e integrales): volatile si son compartidas con ISR
+volatile float phi_ref = 0.0f;
+volatile float theta_ref = 0.0f;
+volatile float psi_ref = 0.0f;
+volatile float integral_phi = 0.0f;
+volatile float integral_theta = 0.0f;
+volatile float integral_psi = 0.0f;
 
 // === Variables para control avanzado ===
 // Modo deslizante

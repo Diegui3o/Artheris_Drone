@@ -21,20 +21,10 @@ extern float t;
 extern volatile float AnglePitch_est;
 extern volatile float AngleRoll_est;
 
-extern Servo mot1;
-extern Servo mot2;
-extern Servo mot3;
-extern Servo mot4;
-
-extern const int mot1_pin;
-extern const int mot2_pin;
-extern const int mot3_pin;
-extern const int mot4_pin;
-
 // Variables de estado - OPTIMIZADO: quitado volatile innecesario
-extern int phi_ref, theta_ref, psi_ref;
+extern volatile float phi_ref, theta_ref, psi_ref;
 
-extern float integral_phi, integral_theta, integral_psi;
+extern volatile float integral_phi, integral_theta, integral_psi;
 
 // === Variables para control avanzado ===
 // Modo deslizante

@@ -28,7 +28,7 @@ void channelInterrupHandler()
   else if (last_channel_1 == 1)
   {
     last_channel_1 = 0;
-    ReceiverValue[0] = current_time - timer_1;
+    ReceiverValue[0] = constrain(current_time - timer_1, 1000, 2000);
   }
   if (digitalRead(channel_2_pin))
   {
@@ -41,7 +41,7 @@ void channelInterrupHandler()
   else if (last_channel_2 == 1)
   {
     last_channel_2 = 0;
-    ReceiverValue[1] = current_time - timer_2;
+    ReceiverValue[1] = constrain(current_time - timer_2, 1000, 2000);
   }
   if (digitalRead(channel_3_pin))
   {
@@ -54,7 +54,7 @@ void channelInterrupHandler()
   else if (last_channel_3 == 1)
   {
     last_channel_3 = 0;
-    ReceiverValue[2] = current_time - timer_3;
+    ReceiverValue[2] = constrain(current_time - timer_3, 1000, 2000);
   }
   if (digitalRead(channel_4_pin))
   {
@@ -67,7 +67,7 @@ void channelInterrupHandler()
   else if (last_channel_4 == 1)
   {
     last_channel_4 = 0;
-    ReceiverValue[3] = current_time - timer_4;
+    ReceiverValue[3] = constrain(current_time - timer_4, 1000, 2000);
   }
   if (digitalRead(channel_5_pin))
   {
@@ -80,7 +80,7 @@ void channelInterrupHandler()
   else if (last_channel_5 == 1)
   {
     last_channel_5 = 0;
-    ReceiverValue[4] = current_time - timer_5;
+    ReceiverValue[4] = constrain(current_time - timer_5, 1000, 2000);
   }
   if (digitalRead(channel_6_pin))
   {
@@ -93,7 +93,7 @@ void channelInterrupHandler()
   else if (last_channel_6 == 1)
   {
     last_channel_6 = 0;
-    ReceiverValue[5] = current_time - timer_6;
+    ReceiverValue[5] = constrain(current_time - timer_6, 1000, 2000);
   }
 }
 
@@ -124,10 +124,17 @@ void setup_manual_mode()
 
 void loop_manual_mode(float dt)
 {
-  // 1. Leer valores del receptor (igual)
+  // Limitar valores de receptor antes de usarlos
+  ReceiverValue[0] = constrain(ReceiverValue[0], 1000, 2000);
+  ReceiverValue[1] = constrain(ReceiverValue[1], 1000, 2000);
+  ReceiverValue[2] = constrain(ReceiverValue[2], 1000, 2000);
+  ReceiverValue[3] = constrain(ReceiverValue[3], 1000, 2000);
+  ReceiverValue[4] = constrain(ReceiverValue[4], 1000, 2000);
+  ReceiverValue[5] = constrain(ReceiverValue[5], 1000, 2000);
+
   DesiredAngleRoll = 0.1 * (ReceiverValue[0] - 1500);
   DesiredAnglePitch = 0.1 * (ReceiverValue[1] - 1500);
-  InputThrottle = ReceiverValue[2];
+  InputThrottle = constrain(ReceiverValue[2], 1000, 2000);
   DesiredAngleYaw = 0.15 * (ReceiverValue[3] - 1500);
 
   if (InputThrottle > 1020 && InputThrottle < 2000)
