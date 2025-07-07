@@ -89,12 +89,9 @@ void gyro_signals(void)
   AccY = (float)AccYLSB / 4096;
   AccZ = (float)AccZLSB / 4096;
 
-  AngleRoll_est = atan(AccY / sqrt(AccX * AccX + AccZ * AccZ)) * 1 / (3.142 / 180);
-  AnglePitch_est = -atan(AccX / sqrt(AccY * AccY + AccZ * AccZ)) * 1 / (3.142 / 180);
-
   // Cálculo del ángulo estimado a partir del acelerómetro (usando atan2 puede ser más robusto)
-  accAngleRoll = atan2(AccY, sqrt(AccX * AccX + AccZ * AccZ)) * 180.0 / PI;
-  accAnglePitch = -atan2(AccX, sqrt(AccY * AccY + AccZ * AccZ)) * 180.0 / PI;
+  AngleRoll_est = atan2(AccY, sqrt(AccX * AccX + AccZ * AccZ)) * 180.0 / PI;
+  AnglePitch_est = -atan2(AccX, sqrt(AccY * AccY + AccZ * AccZ)) * 180.0 / PI;
 
   // Utiliza las tasas del giroscopio
   float gyroRateRoll_local = gyroRateRoll;

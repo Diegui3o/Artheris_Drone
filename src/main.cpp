@@ -14,15 +14,15 @@
 SemaphoreHandle_t sensorMutex = NULL;
 
 // ================= CONFIGURACIÓN =================
-const char *ssid = "WLAN_F388";
-const char *password = "wP4AzXER43E9";
-const char *websocket_server = "192.168.1.33"; // IP de tu servidor Node.js
-const int websocket_port = 3003;               // Puerto debe coincidir con el servidor
+const char *ssid = "FAMILIAMYM";
+const char *password = "mm221418";
+const char *websocket_server = "192.168.1.30";
+const int websocket_port = 3003;
 const char *websocket_path = "/esp32";
 
 // Configuración IP fija
-IPAddress local_IP(192, 168, 1, 200);           // IP fija para el ESP32 en la red Wi-Fi
-IPAddress gateway(192, 168, 1, 1);              // Puerta de enlace de tu red Wi-Fi
+IPAddress local_IP(192, 168, 1, 200); // IP fija para el ESP32 en la red Wi-Fi
+IPAddress gateway(192, 168, 1, 1);    // Puerta de enlace de tu red Wi-Fi
 IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);
 IPAddress secondaryDNS(8, 8, 4, 4);
@@ -58,6 +58,18 @@ void prepareAndSendMessage();
 void connectToWebSocket();
 void changeMode(int newMode);
 void processWebSocketMessage(const char *message);
+const char *DEVICE_ID = "esp32-001";
+const char *DEVICE_NAME = "ESP32 Sala";
+
+void sendIdentification()
+{
+    StaticJsonDocument<128> doc;
+    doc["id"] = DEVICE_ID;
+    doc["nombre"] = DEVICE_NAME;
+    String json;
+    serializeJson(doc, json);
+    webSocket.sendTXT(json);
+}
 
 bool setup_wifi()
 {
@@ -248,7 +260,7 @@ void TaskControlCode(void *pvParameters)
         {
             static uint32_t control_last_time = 0;
             float control_dt = (micros() - control_last_time) / 1e6;
-            if (control_dt >= 0.001 ) // 25Hz para control
+            if (control_dt >= 0.001) // 25Hz para control
             {
                 if (xSemaphoreTake(sensorMutex, 0) == pdTRUE) // No bloquear
                 {
@@ -274,17 +286,20 @@ void TaskComunicacionCode(void *pvParameters)
         webSocket.loop();
 
         // Reconexión si es necesario
-        if (!webSocket.isConnected() && millis() - lastConnectionAttempt > connectionInterval)
+        static bool idSent = false;
+        if (webSocket.isConnected() && !idSent)
         {
-            lastConnectionAttempt = millis();
-            connectToWebSocket();
+            sendIdentification();
+            idSent = true;
         }
-
-        // Envío de datos por WebSocket (periódico, independiente)
-        if (webSocket.isConnected() && millis() - lastSendTime >= sendInterval)
+        if (webSocket.isConnected() && idSent && millis() - lastSendTime >= sendInterval)
         {
             prepareAndSendMessage();
             lastSendTime = millis();
+        }
+        if (!webSocket.isConnected())
+        {
+            idSent = false; // Permite re-enviar si se reconecta
         }
         vTaskDelay(pdMS_TO_TICKS(1));
     }
@@ -293,8 +308,8 @@ void TaskComunicacionCode(void *pvParameters)
 void prepareAndSendMessage()
 {
     String msg = String(millis()) + "," +
-                 String(DesiredAngleRoll) + "," +
-                 String(DesiredAnglePitch) + "," +
+                 String(phi_ref) + "," +
+                 String(theta_ref) + "," +
                  String(AngleYaw) + "," +
                  String(gyroRateRoll) + "," +
                  String(gyroRatePitch) + "," +
@@ -318,7 +333,8 @@ void prepareAndSendMessage()
                  String(MotorInput3) + "," +
                  String(MotorInput4) + "," +
                  String(T) + "," +
-                 String(modoActual);
+                 String(modoActual) + "," +
+                 DEVICE_ID;
     webSocket.sendTXT(msg);
 }
 
