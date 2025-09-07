@@ -16,7 +16,7 @@ SemaphoreHandle_t sensorMutex = NULL;
 // ================= CONFIGURACIÓN =================
 const char *ssid = "FAMILIAMYM";
 const char *password = "mm221418";
-const char *websocket_server = "192.168.1.30";
+const char *websocket_server = "192.168.1.18";
 const int websocket_port = 3003;
 const char *websocket_path = "/esp32";
 
@@ -30,7 +30,6 @@ IPAddress secondaryDNS(8, 8, 4, 4);
 // ================= VARIABLES =================
 volatile bool ledState = false;
 volatile bool motorState = false;
-volatile int modoActual = 1;
 volatile bool modoCambiado = false;
 
 Preferences preferences;
@@ -308,8 +307,8 @@ void TaskComunicacionCode(void *pvParameters)
 void prepareAndSendMessage()
 {
     String msg = String(millis()) + "," +
-                 String(phi_ref) + "," +
-                 String(theta_ref) + "," +
+                 String(AngleRoll_est) + "," +
+                 String(AnglePitch_est) + "," +
                  String(AngleYaw) + "," +
                  String(gyroRateRoll) + "," +
                  String(gyroRatePitch) + "," +
@@ -325,9 +324,9 @@ void prepareAndSendMessage()
                  String(error_phi) + "," +
                  String(error_theta) + "," +
                  String(InputThrottle) + "," +
-                 String(DesiredAngleRoll) + "," +
-                 String(DesiredAnglePitch) + "," +
-                 String(DesiredRateYaw) + "," +
+                 String(phi_ref) + "," +
+                 String(theta_ref) + "," +
+                 String(psi_ref) + "," +
                  String(MotorInput1) + "," +
                  String(MotorInput2) + "," +
                  String(MotorInput3) + "," +

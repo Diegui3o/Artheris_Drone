@@ -129,7 +129,7 @@ void setupMPU()
   mpu.initialize();
   // Calibración automática al inicio
   compass.setCalibration(-1767, 1345, -1503, 1199, -1325, 1567);
-  delay(2000); // Esperar estabilización
+  delay(2000);
 
   calibrateSensors();
   Serial.println("Calibración completada.");

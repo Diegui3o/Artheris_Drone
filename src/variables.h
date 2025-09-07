@@ -4,6 +4,9 @@
 #include <Arduino.h>
 #include <ESP32Servo.h>
 #include <MPU6050.h>
+#pragma once
+
+extern volatile int modoActual;
 
 // Define window_size before it is used
 #define window_size 10 // Tamaño de la ventana
@@ -21,10 +24,20 @@ extern float t;
 extern volatile float AnglePitch_est;
 extern volatile float AngleRoll_est;
 
-// Variables de estado - OPTIMIZADO: quitado volatile innecesario
-extern volatile float phi_ref, theta_ref, psi_ref;
+extern Servo mot1;
+extern Servo mot2;
+extern Servo mot3;
+extern Servo mot4;
 
-extern volatile float integral_phi, integral_theta, integral_psi;
+extern const int mot1_pin;
+extern const int mot2_pin;
+extern const int mot3_pin;
+extern const int mot4_pin;
+
+// Variables de estado - OPTIMIZADO: quitado volatile innecesario
+extern volatile float  phi_ref, theta_ref, psi_ref;
+
+extern float integral_phi, integral_theta, integral_psi;
 
 // === Variables para control avanzado ===
 // Modo deslizante
@@ -46,6 +59,8 @@ extern int ax_offset, ay_offset, az_offset, gx_offset, gy_offset, gz_offset;
 
 extern volatile float AngleRoll_est;
 extern volatile float AnglePitch_est;
+extern volatile float roll_rad, pitch_rad; // Mantener volatile - compartido entre tareas
+extern volatile float gyroRoll_rad, gyroPitch_rad;
 extern float tau_x, tau_y, tau_z;
 extern float error_phi, error_theta, error_psi;
 
@@ -184,14 +199,14 @@ extern float yaw;
 // Function declarations
 float sat(float x, float epsilon);
 
-extern float k1;
-extern float g1;
-extern float k2;
-extern float g2;
+extern float k1, k2, k3;
+extern float g1, g2, g3;
+extern float m1, m2, m3;
 
-// Declaración, no definición
+extern float Throttle_sal;
+
+// LQR gain matrices for attitude control
+extern float Ki_at[3][3];
 extern float Kc_at[3][6];
-extern const float Ki_at[3][3];
-float sat(float, float); // Declaración de función
 
 #endif // VARIABLES_H

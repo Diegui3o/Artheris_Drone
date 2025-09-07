@@ -1,69 +1,67 @@
-#include <MPU6050.h> // Asegura que el compilador conoce la clase MPU6050
+#include <MPU6050.h>
 #include "variables.h"
 
+volatile int modoActual = 1;
+
 // Define global variables
-float vel_z = 0.0f;
-float error_z = 0.0f;
+float vel_z = 0.0;
+float error_z = 0.0;
 
 MPU6050 accelgyro;
 
-// Solo RatePitch, RateRoll y RateYaw deben ser volatile si se modifican en ISR
-volatile float RatePitch = 0.0f;
-volatile float RateRoll = 0.0f;
-volatile float RateYaw = 0.0f;
+volatile float RatePitch = 0.0, RateRoll = 0.0, RateYaw = 0.0;
 
-float RateCalibrationRoll = 0.27f;
-float RateCalibrationPitch = -0.85f;
-float RateCalibrationYaw = -2.09f;
-float AccXCalibration = 0.03f;
-float AccYCalibration = 0.01f;
-float AccZCalibration = -0.07f;
+float RateCalibrationRoll = 0.27;
+float RateCalibrationPitch = -0.85;
+float RateCalibrationYaw = -2.09;
+float AccXCalibration = 0.03;
+float AccYCalibration = 0.01;
+float AccZCalibration = -0.07;
 
 int pinLed = 2;
 int ESCfreq = 500;
 
-// Solo marcar como volatile si se usan en ISR
-volatile float AngleRoll_est = 0.0f;
-volatile float AnglePitch_est = 0.0f;
-float tau_x = 0.0f, tau_y = 0.0f, tau_z = 0.0f;
-float error_phi = 0.0f, error_theta = 0.0f, error_psi = 0.0f;
+volatile float AngleRoll_est;
+volatile float AnglePitch_est;
+float tau_x, tau_y, tau_z;
+float error_phi, error_theta, error_psi;
 
-int buffersize = 1000;
-int acel_deadzone = 8;
-int giro_deadzone = 1;
+int buffersize = 1000; // Cantidad de lecturas para promediar
+int acel_deadzone = 8; // Zona muerta del acelerómetro
+int giro_deadzone = 1; // Zona muerta del giroscopio
 
-int mean_ax = 0, mean_ay = 0, mean_az = 0, mean_gx = 0, mean_gy = 0, mean_gz = 0;
-int ax_offset = 0, ay_offset = 0, az_offset = 0, gx_offset = 0, gy_offset = 0, gz_offset = 0;
+int mean_ax, mean_ay, mean_az, mean_gx, mean_gy, mean_gz;
+int ax_offset, ay_offset, az_offset, gx_offset, gy_offset, gz_offset;
 
-uint32_t LoopTimer = 0;
+// Variables para la calibración
+uint32_t LoopTimer;
 
 Servo mot1;
 Servo mot2;
 Servo mot3;
 Servo mot4;
 
-const int mot1_pin = 15;
+const int mot1_pin = 13;
 const int mot2_pin = 12;
 const int mot3_pin = 14;
 const int mot4_pin = 27;
 
-int16_t ax = 0, ay = 0, az = 0, gx = 0, gy = 0, gz = 0;
+int16_t ax, ay, az, gx, gy, gz;
 
-// Timers y canales de radio: deben ser volatile
-volatile uint32_t current_time = 0;
+volatile uint32_t current_time;
 volatile uint32_t last_channel_1 = 0;
 volatile uint32_t last_channel_2 = 0;
 volatile uint32_t last_channel_3 = 0;
 volatile uint32_t last_channel_4 = 0;
 volatile uint32_t last_channel_5 = 0;
 volatile uint32_t last_channel_6 = 0;
-volatile uint32_t timer_1 = 0;
-volatile uint32_t timer_2 = 0;
-volatile uint32_t timer_3 = 0;
-volatile uint32_t timer_4 = 0;
-volatile uint32_t timer_5 = 0;
-volatile uint32_t timer_6 = 0;
-volatile int ReceiverValue[6] = {0};
+volatile uint32_t timer_1;
+volatile uint32_t timer_2;
+volatile uint32_t timer_3;
+volatile uint32_t timer_4;
+volatile uint32_t timer_5;
+volatile uint32_t timer_6;
+volatile int ReceiverValue[6];
 const int channel_1_pin = 34;
 const int channel_2_pin = 35;
 const int channel_3_pin = 32;
@@ -74,30 +72,31 @@ const int channel_6_pin = 26;
 int ThrottleIdle = 1170;
 int ThrottleCutOff = 1000;
 
-// Solo AccX, AccY, AccZ y los ángulos estimados deberían ser volatile si los modifica una ISR
-volatile float AccX = 0.0f, AccY = 0.0f, AccZ = 0.0f;
-volatile float AngleRoll = 0.0f, AnglePitch = 0.0f, AngleYaw = 0.0f;
-
-float GyroXdps = 0.0f, GyroYdps = 0.0f, GyroZdps = 0.0f;
-int DesiredRateRoll = 0, DesiredRatePitch = 0, DesiredRateYaw = 0;
-int InputRoll = 0, InputThrottle = 0, InputPitch = 0, InputYaw = 0;
-int DesiredAngleRoll = 0, DesiredAnglePitch = 0, DesiredAngleYaw = 0;
-float ErrorAngleRoll = 0.0f, ErrorAnglePitch = 0.0f;
-float PrevErrorAngleRoll = 0.0f, PrevErrorAnglePitch = 0.0f;
-float PrevItermAngleRoll = 0.0f, PrevItermAnglePitch = 0.0f;
+// Kalman filters for angle mode - OPTIMIZADO: quitado volatile innecesario
+volatile float AccX, AccY, AccZ;                            // Mantener volatile - compartido entre tareas
+volatile float AngleRoll = 0, AnglePitch = 0, AngleYaw = 0; // Mantener volatile - compartido entre tareas
+volatile float roll_rad = 0.0f, pitch_rad = 0.0f; // Mantener volatile - compartido entre tareas
+volatile float gyroRoll_rad = 0.0f, gyroPitch_rad = 0.0f;
+float GyroXdps, GyroYdps, GyroZdps;                         // OPTIMIZADO: solo uso local
+int DesiredRateRoll, DesiredRatePitch, DesiredRateYaw;
+int InputRoll, InputThrottle, InputPitch, InputYaw;
+int DesiredAngleRoll, DesiredAnglePitch, DesiredAngleYaw;
+float ErrorAngleRoll, ErrorAnglePitch;         // OPTIMIZADO: solo cálculos locales
+float PrevErrorAngleRoll, PrevErrorAnglePitch; // OPTIMIZADO: solo cálculos locales
+float PrevItermAngleRoll, PrevItermAnglePitch; // OPTIMIZADO: solo cálculos locales
 
 float complementaryAngleRoll = 0.0f;
 float complementaryAnglePitch = 0.0f;
 
-float MotorInput1 = 0.0f, MotorInput2 = 0.0f, MotorInput3 = 0.0f, MotorInput4 = 0.0f;
+float MotorInput1, MotorInput2, MotorInput3, MotorInput4; // OPTIMIZADO: solo salida de control
 
-// Variables de estado (referencias e integrales): volatile si son compartidas con ISR
-volatile float phi_ref = 0.0f;
-volatile float theta_ref = 0.0f;
-volatile float psi_ref = 0.0f;
-volatile float integral_phi = 0.0f;
-volatile float integral_theta = 0.0f;
-volatile float integral_psi = 0.0f;
+// Variables de estado
+volatile float phi_ref = 0.0;  
+volatile float theta_ref = 0.0;
+volatile float psi_ref = 0.0;  
+float integral_phi;   
+float integral_theta; 
+float integral_psi;   
 
 // === Variables para control avanzado ===
 // Modo deslizante
@@ -131,7 +130,7 @@ float residual_history[window_size] = {0};
 int residual_index = 0;
 float c_threshold = 0.01;
 
-float dt = 0.004;       // Paso de tiempo (ajustar según la frecuencia de muestreo)
+float dt = 0.006;       // Paso de tiempo (ajustar según la frecuencia de muestreo)
 float Q_angle = 0.001f; // Covarianza del ruido del proceso (ángulo)
 float Q_gyro = 0.003;   // Covarianza del ruido del proceso (giroscopio)
 float R_angle = 0.03;   // Covarianza del ruido de medición (acelerómetro)
@@ -164,27 +163,18 @@ float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;
 float yaw = 0.0f;
 
 // === UTILITY FUNCTIONS ===
-float sat(float x, float epsilon)
-{
-  if (x > epsilon)
-    return 1.0;
-  if (x < -epsilon)
-    return -1.0;
+float sat(float x, float epsilon) {
+  if (x > epsilon) return 1.0;
+  if (x < -epsilon) return -1.0;
   return x / epsilon;
 }
 
-float k1;
-float g1;
-float k2;
-float g2;
+float k1, k2, k3;
+float g1, g2, g3;
+float m1, m2, m3;
 
-// Definición real (solo aquí)
-float Kc_at[3][6] = {
-    {2.1, 0, 0, 0.58, 0, 0},
-    {0, 1.92, 0, 0, 0.38, 0},
-    {0, 0, 5.3, 0, 0, 1.6}};
+float Throttle_sal;
 
-const float Ki_at[3][3] = {
-    {0.08, 0, 0},
-    {0, 0.08, 0},
-    {0, 0, 0.01}};
+// LQR gain matrices for attitude control
+float Ki_at[3][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+float Kc_at[3][6] = {{0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0}};
