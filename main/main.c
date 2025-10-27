@@ -10,10 +10,11 @@
 #include "telemetry.h"
 #include "lwip/inet.h"
 #include "led.h"
-#include "cmd_led.h"
+#include "cmd.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "mode_control.h"
 
 #define I2C_PORT I2C_NUM_0
 #define I2C_SDA 8
@@ -52,7 +53,6 @@ static void system_init_task(void *arg)
 
     ESP_LOGI(TAG, "Esperando 500 ms para estabilizar red y recursos");
     vTaskDelay(pdMS_TO_TICKS(500));
-    ESP_LOGI(TAG, "Despues del delay de 500 ms - continuando inicialización");
 
     // --- LEDs ---
     ESP_LOGI(TAG, "Inicializando LEDs...");
@@ -62,6 +62,8 @@ static void system_init_task(void *arg)
     // Por defecto empieza en blanco
     rgb_led_set(255, 255, 255);
     ESP_LOGI(TAG, "LEDs inicializados");
+
+    mode_control_start_core1(10);
 
     // --- CMD LED (server UDP non-blocking en core 0) ---
     bool started = cmd_led_start_core0(8888, 5);

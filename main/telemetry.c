@@ -1,4 +1,5 @@
 #include "telemetry.h"
+#include "mode_control.h" // <-- para acceder a getMode()
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/sockets.h"
@@ -36,29 +37,47 @@ static void telemetry_task(void *arg)
     to.sin_port = htons(local.port);
     to.sin_addr.s_addr = local.ip;
 
-    ESP_LOGI(TAGT, "UDP listo a %s:%u",
-             inet_ntoa(to.sin_addr), (unsigned)ntohs(to.sin_port));
+    ESP_LOGI(TAGT, "UDP listo a %s:%u", inet_ntoa(to.sin_addr), (unsigned)ntohs(to.sin_port));
 
     int64_t last_sent_ts = -1;
+    drone_mode_t last_sent_mode = -1; // para evitar enviar modo repetido
 
     for (;;)
     {
         AttitudeSample a;
         if (attitude_get_latest(&a))
         {
+            bool send_now = false;
+
+            // Verifica cambio en timestamp (nueva lectura de actitud)
             if (a.t_us != last_sent_ts)
             {
                 last_sent_ts = a.t_us;
+                send_now = true;
+            }
 
-                char json[64];
-                int n = snprintf(json, sizeof(json), "{\"AngleRoll\":%.3f}\n", a.roll_deg);
+            // Verifica cambio de modo
+            drone_mode_t current_mode = getMode();
+            if (current_mode != last_sent_mode)
+            {
+                last_sent_mode = current_mode;
+                send_now = true;
+            }
+
+            if (send_now)
+            {
+                char json[128];
+                int n = snprintf(json, sizeof(json),
+                                 "{\"AngleRoll\":%.3f, \"AnglePitch\":%.3f, \"modoActual\":%d}\n",
+                                 a.roll_deg, a.pitch_deg, (int)current_mode);
                 if (n > 0)
                 {
-                    (void)sendto(sock, json, n, 0, (struct sockaddr *)&to, sizeof(to));
+                    sendto(sock, json, n, 0, (struct sockaddr *)&to, sizeof(to));
                 }
             }
         }
-        vTaskDelay(1);
+
+        vTaskDelay(pdMS_TO_TICKS(10)); // 100 Hz de tasa de envío
     }
 }
 

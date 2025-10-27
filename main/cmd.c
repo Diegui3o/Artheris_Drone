@@ -1,4 +1,4 @@
-#include "cmd_led.h"
+#include "cmd.h"
 #include "led.h"
 #include "driver/gpio.h"
 
@@ -13,6 +13,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "esp_system.h"
+#include "mode_control.h"
 
 static const char *TAG = "CMD_LED";
 static TaskHandle_t s_cmd_task = NULL;
@@ -163,6 +164,45 @@ static bool handle_json(const char *msg, int len, char *out_info, size_t out_inf
             handled = true;
             if (out_info && out_info_len)
                 strncpy(out_info, "leds many", out_info_len - 1);
+            goto out;
+        }
+    }
+    // --- MODE ---
+    cJSON *mode = cJSON_GetObjectItemCaseSensitive(root, "mode");
+    if (!mode)
+    {
+        cJSON *payload = cJSON_GetObjectItemCaseSensitive(root, "payload");
+        if (cJSON_IsObject(payload))
+        {
+            mode = cJSON_GetObjectItemCaseSensitive(payload, "mode");
+        }
+    }
+    if (cJSON_IsNumber(mode) || cJSON_IsString(mode))
+    {
+        int newMode = -1;
+        if (cJSON_IsNumber(mode))
+        {
+            newMode = mode->valueint;
+        }
+        else
+        {
+            const char *s = mode->valuestring;
+            if (s)
+            {
+                if (strcasecmp(s, "piloto") == 0 || strcasecmp(s, "pilot") == 0)
+                    newMode = 0;
+                else if (strcasecmp(s, "manual") == 0)
+                    newMode = 2;
+                else if (strcasecmp(s, "espera") == 0 || strcasecmp(s, "idle") == 0)
+                    newMode = 1;
+            }
+        }
+        if (newMode >= 0)
+        {
+            changeMode((mode_t)newMode);
+            handled = true;
+            if (out_info && out_info_len)
+                strncpy(out_info, "mode_changed", out_info_len - 1);
             goto out;
         }
     }

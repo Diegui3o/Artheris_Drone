@@ -7,7 +7,8 @@ set(srcs
     "telemetry.c"
     "wifi_sta.c"
     "led.c"
-    "cmd_led.c"
+    "cmd.c"
+    "mode_control.c"
 )
 
 idf_component_register(
