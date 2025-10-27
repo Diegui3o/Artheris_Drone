@@ -115,7 +115,7 @@ esp_err_t wifi_sta_start(const wifi_sta_cfg_t *cfg)
     // DHCP o IP estática
     if (cfg->ip == 0)
     {
-        // DHCP cliente habilitado
+        // Modo DHCP
         esp_netif_dhcp_status_t st;
         if (esp_netif_dhcpc_get_status(s_netif, &st) == ESP_OK && st != ESP_NETIF_DHCP_STARTED)
         {
@@ -125,29 +125,38 @@ esp_err_t wifi_sta_start(const wifi_sta_cfg_t *cfg)
     }
     else
     {
-        // ---- IP fija (solución robusta para v5.5.x) ----
+        // Modo IP fija
         esp_netif_dhcp_status_t st;
 
-        // 1️⃣ Detener DHCP si está activo
+        // Detener cliente DHCP si está activo
+        ESP_LOGI(TAG, "Verificando cliente DHCP para detener…");
         ESP_ERROR_CHECK(esp_netif_dhcpc_stop(s_netif));
 
-        // 2️⃣ Verificar que DHCP está realmente detenido
-        ESP_ERROR_CHECK(esp_netif_dhcpc_get_status(s_netif, &st));
-        if (st != ESP_NETIF_DHCP_STOPPED)
+        // Esperar hasta que DHCP realmente esté detenido
+        for (int retry = 0; retry < 10; retry++)
         {
-            ESP_LOGE(TAG, "No se pudo detener DHCP");
-            return ESP_FAIL;
+            vTaskDelay(pdMS_TO_TICKS(100));
+            if (esp_netif_dhcpc_get_status(s_netif, &st) == ESP_OK && st == ESP_NETIF_DHCP_STOPPED)
+            {
+                ESP_LOGI(TAG, "Cliente DHCP detenido correctamente");
+                break;
+            }
+            if (retry == 9)
+            {
+                ESP_LOGE(TAG, "Tiempo de espera agotado: cliente DHCP no detenido");
+                return ESP_FAIL;
+            }
         }
-        ESP_LOGI(TAG, "DHCP detenido correctamente");
 
-        // 3️⃣ Aplicar IP estática (seguro ahora)
+        // Aplicar IP fija
         esp_netif_ip_info_t ipi = {
             .ip.addr = cfg->ip,
             .gw.addr = cfg->gw,
             .netmask.addr = cfg->netmask,
         };
         ESP_ERROR_CHECK(esp_netif_set_ip_info(s_netif, &ipi));
-        ESP_LOGI(TAG, "IP estática aplicada correctamente");
+        ESP_LOGI(TAG, "IP estática aplicada correctamente: " IPSTR,
+                 IP2STR(&ipi.ip));
     }
 
     // Conexión

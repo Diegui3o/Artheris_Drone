@@ -1,4 +1,3 @@
-// main/cmd_led.c
 #include "cmd_led.h"
 #include "led.h"
 
@@ -7,7 +6,7 @@
 
 #include "lwip/sockets.h"
 #include "lwip/inet.h"
-
+#include <fcntl.h>
 #include "cJSON.h"
 #include "esp_log.h"
 #include <string.h>
@@ -25,7 +24,18 @@ static void apply_leds_many_ids(cJSON *ids, bool on)
         if (cJSON_IsNumber(it))
         {
             int id = it->valueint;
-            (void)led_set((uint8_t)id, on);
+            // Si el id corresponde al LED RGB integrado (1), usar la API RGB
+            if (id == 1)
+            {
+                if (on)
+                    rgb_led_set(0, 255, 0); // verde
+                else
+                    rgb_led_off();
+            }
+            else
+            {
+                (void)led_set((uint8_t)id, on);
+            }
         }
     }
 }
@@ -45,7 +55,19 @@ static bool handle_json(const char *msg, int len)
     {
         bool st = cJSON_IsTrue(led);
         for (uint8_t i = 1; i <= leds_count(); ++i)
-            led_set(i, st);
+        {
+            if (i == 1)
+            {
+                if (st)
+                    rgb_led_set(0, 255, 0);
+                else
+                    rgb_led_off();
+            }
+            else
+            {
+                led_set(i, st);
+            }
+        }
         handled = true;
         goto out;
     }
@@ -57,7 +79,19 @@ static bool handle_json(const char *msg, int len)
         cJSON *state = cJSON_GetObjectItemCaseSensitive(led, "state");
         if (cJSON_IsNumber(id) && cJSON_IsBool(state))
         {
-            (void)led_set((uint8_t)id->valueint, cJSON_IsTrue(state));
+            int iid = (int)id->valueint;
+            bool st = cJSON_IsTrue(state);
+            if (iid == 1)
+            {
+                if (st)
+                    rgb_led_set(0, 255, 0);
+                else
+                    rgb_led_off();
+            }
+            else
+            {
+                (void)led_set((uint8_t)iid, st);
+            }
             handled = true;
             goto out;
         }
@@ -118,7 +152,8 @@ static void cmd_led_task(void *arg)
         vTaskDelete(NULL);
         return;
     }
-
+    int flags = fcntl(sock, F_GETFL, 0);
+    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
     ESP_LOGI(TAG, "escuchando UDP en 0.0.0.0:%u", (unsigned)listen_port);
 
     char buf[512];
@@ -128,17 +163,19 @@ static void cmd_led_task(void *arg)
         struct sockaddr_in from;
         socklen_t flen = sizeof(from);
         int n = recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr *)&from, &flen);
-        if (n <= 0)
-            continue;
 
-        buf[n] = '\0'; // por si quieres ver el string
-        ESP_LOGI(TAG, "rx %dB de %s:%u -> %s",
-                 n, inet_ntoa(from.sin_addr), (unsigned)ntohs(from.sin_port), buf);
+        if (n > 0)
+        {
+            buf[n] = '\0';
+            ESP_LOGI(TAG, "rx %dB de %s:%u -> %s",
+                     n, inet_ntoa(from.sin_addr), (unsigned)ntohs(from.sin_port), buf);
 
-        bool ok = handle_json(buf, n);
+            bool ok = handle_json(buf, n);
+            send_ack(sock, &from, ok);
+        }
 
-        // SIEMPRE responder un ACK para que tu UI no “revienta”
-        send_ack(sock, &from, ok);
+        // Añade un pequeño delay para cooperar con el scheduler
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -148,6 +185,7 @@ bool cmd_led_start_core0(uint16_t listen_port, int priority)
     if (s_cmd_task)
         return true;
     BaseType_t ok = xTaskCreatePinnedToCore(
-        cmd_led_task, "cmd_led", 4096, (void *)(uintptr_t)listen_port, priority, &s_cmd_task, 0 /* core 0 */);
+        cmd_led_task, "cmd_led", 4096, (void *)(uintptr_t)listen_port, priority, &s_cmd_task, 1);
+
     return ok == pdPASS;
 }

@@ -21,55 +21,11 @@
 
 static const char *TAG = "APP";
 
-void app_main(void)
+static void system_init_task(void *arg)
 {
-    ESP_LOGI(TAG, "==== Inicio de app_main ====");
-    esp_log_level_set("APP", ESP_LOG_INFO);
+    ESP_LOGI(TAG, "system_init_task: start (core=%d)", xPortGetCoreID());
 
-    esp_err_t err;
-    err = esp_wifi_disconnect();
-    if (err == ESP_OK)
-    {
-        ESP_LOGI("APP", "WiFi disconnected");
-    }
-
-    // 2️⃣ Parar WiFi
-    err = esp_wifi_stop();
-    if (err == ESP_OK)
-    {
-        ESP_LOGI("APP", "WiFi stopped");
-    }
-
-    // 3️⃣ De-inicializar WiFi driver
-    err = esp_wifi_deinit();
-    if (err == ESP_OK)
-    {
-        ESP_LOGI("APP", "WiFi deinitialized");
-    }
-
-    // 4️⃣ De-inicializar netif stack
-    err = esp_netif_deinit();
-    if (err == ESP_OK)
-    {
-        ESP_LOGI("APP", "Network interface stack deinitialized");
-    }
-
-    // 5️⃣ Eliminar el loop de eventos por defecto
-    err = esp_event_loop_delete_default();
-    if (err == ESP_OK || err == ESP_ERR_INVALID_STATE)
-    {
-        // ESP_ERR_INVALID_STATE se puede ignorar si no había loop creado
-        ESP_LOGI("APP", "Default event loop deleted (or not existed)");
-    }
-    else
-    {
-        ESP_LOGW("APP", "Failed deleting event loop: 0x%x", err);
-    }
-
-    // 6️⃣ Pequeña espera para que todo se "calme"
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    // --- 1️⃣ WiFi STA inicialización ---
+    // --- WiFi ---
     wifi_sta_cfg_t w = {
         .ssid = "FAMILIAMYM",
         .pass = "mm221418",
@@ -81,47 +37,65 @@ void app_main(void)
     };
 
     int64_t t0 = esp_timer_get_time();
-    err = wifi_sta_start(&w);
+    esp_err_t err = wifi_sta_start(&w);
     int64_t elapsed_ms = (esp_timer_get_time() - t0) / 1000;
-    ESP_LOGI(TAG, "wifi_sta_start -> %s en %lld ms (is_up=%d)",
+    ESP_LOGI(TAG, "wifi_sta_start -> %s (is_up=%d) in %lld ms",
              (err == ESP_OK) ? "OK" : esp_err_to_name(err),
-             (long long)elapsed_ms,
-             wifi_sta_is_up());
+             wifi_sta_is_up(), elapsed_ms);
 
-    // --- 2️⃣ LED system ---
+    if (err != ESP_OK || !wifi_sta_is_up())
+    {
+        ESP_LOGE(TAG, "ERROR: WiFi no listo, abortando inicialización");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    ESP_LOGI(TAG, "Esperando 500 ms para estabilizar red y recursos");
+    vTaskDelay(pdMS_TO_TICKS(500));
+    ESP_LOGI(TAG, "Despues del delay de 500 ms - continuando inicialización");
+
+    // --- LEDs ---
     ESP_LOGI(TAG, "Inicializando LEDs...");
     leds_init();
+    ESP_LOGI(TAG, "LEDs inicializados");
+
+    // --- CMD LED (server UDP non-blocking en core 0) ---
     bool started = cmd_led_start_core0(8888, 5);
     ESP_LOGI(TAG, "cmd_led_start_core0 -> %s", started ? "OK" : "FAIL");
 
-    // Delay de seguridad para que no bloquee el siguiente init
-    vTaskDelay(pdMS_TO_TICKS(200));
-
-    // --- 3️⃣ IMU inicialización ---
+    // --- IMU ---
     ESP_LOGI(TAG, "Inicializando IMU...");
-    imu_init(I2C_PORT, I2C_SDA, I2C_SCL, 400000); // 400 kHz
+    imu_init(I2C_PORT, I2C_SDA, I2C_SCL, 400000);
     imu_set_acc_offsets(0, 0, 0);
     imu_set_gyro_offsets(0, 0, 0);
+    imu_start_1khz(1, 18);
+    attitude_start(1, 19, 0.001f, 0.003f, 0.03f);
+    ESP_LOGI(TAG, "IMU iniciado");
 
-    ESP_LOGI(TAG, "Iniciando IMU tasks...");
-    imu_start_1khz(/*core=*/1, /*prio=*/18);
-    attitude_start(/*core=*/1, /*prio=*/19, 0.001f, 0.003f, 0.03f);
-
-    // --- 4️⃣ Telemetría ---
-    ESP_LOGI(TAG, "Inicializando telemetría UDP...");
+    // --- Telemetría ---
     telemetry_start_core0("192.168.1.36", 8889, 5);
+    ESP_LOGI(TAG, "Telemetry started");
 
-    // --- 5️⃣ Control Loop ---
-    ESP_LOGI(TAG, "Creando tarea de control...");
+    // --- Control task ---
     xTaskCreatePinnedToCore(control_task, "control", 4096, NULL, 20, NULL, 1);
+    ESP_LOGI(TAG, "Control task creada");
 
     ESP_LOGI(TAG, "==== Sistema iniciado correctamente ====");
 
-    // --- 6️⃣ Monitoreo (no dejar app_main vacío) ---
+    // Si quieres que la task de init termine:
+    vTaskDelete(NULL);
+}
+
+void app_main(void)
+{
+    esp_log_level_set("*", ESP_LOG_INFO);
+    ESP_LOGI(TAG, "==== Inicio de app_main ====");
+    // Creamos la task de inicialización con stack grande (8k) en core 1
+    xTaskCreatePinnedToCore(system_init_task, "sys_init", 8192, NULL, 5, NULL, 1);
+
+    // Opcional: mantener app_main viva con un loop ligero
     while (1)
     {
-        bool wifi_ok = wifi_sta_is_up();
-        ESP_LOGI(TAG, "Heartbeat: WiFi=%d  FreeHeap=%u", wifi_ok, esp_get_free_heap_size());
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }
