@@ -1,5 +1,5 @@
 #include "telemetry.h"
-#include "mode_control.h" // <-- para acceder a getMode()
+#include "mode_control.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/sockets.h"

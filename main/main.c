@@ -15,6 +15,8 @@
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "mode_control.h"
+#include "motor_ctrl.h"
+#include "cmd_motor.h"
 
 #define I2C_PORT I2C_NUM_0
 #define I2C_SDA 8
@@ -64,6 +66,9 @@ static void system_init_task(void *arg)
     ESP_LOGI(TAG, "LEDs inicializados");
 
     mode_control_start_core1(10);
+
+    motor_ctrl_init();
+    cmd_motor_start(8887, 5);
 
     // --- CMD LED (server UDP non-blocking en core 0) ---
     bool started = cmd_led_start_core0(8888, 5);

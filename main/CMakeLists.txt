@@ -9,6 +9,8 @@ set(srcs
     "led.c"
     "cmd.c"
     "mode_control.c"
+    "motor_ctrl.c"
+    "cmd_motor.c"
 )
 
 idf_component_register(
