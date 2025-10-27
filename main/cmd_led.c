@@ -1,5 +1,6 @@
 #include "cmd_led.h"
 #include "led.h"
+#include "driver/gpio.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -16,6 +17,14 @@
 static const char *TAG = "CMD_LED";
 static TaskHandle_t s_cmd_task = NULL;
 
+static inline int _to_level(bool on)
+{
+    if (LED_ACTIVE_HIGH)
+        return on ? 1 : 0;
+    else
+        return on ? 0 : 1;
+}
+
 static void apply_leds_many_ids(cJSON *ids, bool on)
 {
     cJSON *it = NULL;
@@ -30,45 +39,70 @@ static void apply_leds_many_ids(cJSON *ids, bool on)
                 if (on)
                     rgb_led_set(0, 255, 0); // verde
                 else
-                    rgb_led_off();
+                    rgb_led_set(255, 255, 255); // volver a blanco al "apagar"
             }
             else
             {
-                (void)led_set((uint8_t)id, on);
+                // Control directo de pines definidos en LED_PINS
+                size_t cnt = sizeof(LED_PINS) / sizeof(LED_PINS[0]);
+                if (id >= 1 && (size_t)id <= cnt)
+                {
+                    gpio_set_level(LED_PINS[id - 1], _to_level(on));
+                }
             }
         }
     }
 }
 
 // Devuelve true si manejó algún comando válido
-static bool handle_json(const char *msg, int len)
+static bool handle_json(const char *msg, int len, char *out_info, size_t out_info_len)
 {
     bool handled = false;
 
     cJSON *root = cJSON_ParseWithLength(msg, len);
     if (!root)
+    {
+        if (out_info && out_info_len)
+            strncpy(out_info, "json_parse_error", out_info_len - 1);
         return false;
+    }
 
-    // 1) {"led": true/false}  -> todos
+    // Localiza el objeto que contiene la clave "led".
+    // Soporta varios formatos: root.led, root.payload.led, root.payload.payload.led
     cJSON *led = cJSON_GetObjectItemCaseSensitive(root, "led");
+    if (!led)
+    {
+        cJSON *payload = cJSON_GetObjectItemCaseSensitive(root, "payload");
+        if (cJSON_IsObject(payload))
+            led = cJSON_GetObjectItemCaseSensitive(payload, "led");
+        if (!led && cJSON_IsObject(payload))
+        {
+            cJSON *payload2 = cJSON_GetObjectItemCaseSensitive(payload, "payload");
+            if (cJSON_IsObject(payload2))
+                led = cJSON_GetObjectItemCaseSensitive(payload2, "led");
+        }
+    }
     if (cJSON_IsBool(led))
     {
         bool st = cJSON_IsTrue(led);
-        for (uint8_t i = 1; i <= leds_count(); ++i)
+        size_t cnt = sizeof(LED_PINS) / sizeof(LED_PINS[0]);
+        for (uint8_t i = 1; i <= (uint8_t)cnt; ++i)
         {
             if (i == 1)
             {
                 if (st)
                     rgb_led_set(0, 255, 0);
                 else
-                    rgb_led_off();
+                    rgb_led_set(255, 255, 255);
             }
             else
             {
-                led_set(i, st);
+                gpio_set_level(LED_PINS[i - 1], _to_level(st));
             }
         }
         handled = true;
+        if (out_info && out_info_len)
+            strncpy(out_info, "led all", out_info_len - 1);
         goto out;
     }
 
@@ -86,19 +120,39 @@ static bool handle_json(const char *msg, int len)
                 if (st)
                     rgb_led_set(0, 255, 0);
                 else
-                    rgb_led_off();
+                    rgb_led_set(255, 255, 255);
             }
             else
             {
-                (void)led_set((uint8_t)iid, st);
+                size_t cnt = sizeof(LED_PINS) / sizeof(LED_PINS[0]);
+                if (iid >= 1 && (size_t)iid <= cnt)
+                {
+                    gpio_set_level(LED_PINS[iid - 1], _to_level(st));
+                }
             }
             handled = true;
+            if (out_info && out_info_len)
+                strncpy(out_info, "led one", out_info_len - 1);
             goto out;
         }
     }
 
-    // 3) {"leds": {"ids":[1,2,3], "state":false}}
+    // 3) {"leds": {"ids":[1,2,3], "state":false}}  (soportar también nested payload)
     cJSON *leds = cJSON_GetObjectItemCaseSensitive(root, "leds");
+    if (!leds)
+    {
+        cJSON *payload = cJSON_GetObjectItemCaseSensitive(root, "payload");
+        if (cJSON_IsObject(payload))
+        {
+            leds = cJSON_GetObjectItemCaseSensitive(payload, "leds");
+            if (!leds)
+            {
+                cJSON *payload2 = cJSON_GetObjectItemCaseSensitive(payload, "payload");
+                if (cJSON_IsObject(payload2))
+                    leds = cJSON_GetObjectItemCaseSensitive(payload2, "leds");
+            }
+        }
+    }
     if (cJSON_IsObject(leds))
     {
         cJSON *ids = cJSON_GetObjectItemCaseSensitive(leds, "ids");
@@ -107,21 +161,33 @@ static bool handle_json(const char *msg, int len)
         {
             apply_leds_many_ids(ids, cJSON_IsTrue(state));
             handled = true;
+            if (out_info && out_info_len)
+                strncpy(out_info, "leds many", out_info_len - 1);
             goto out;
         }
     }
 
 out:
     cJSON_Delete(root);
+    if (!handled && out_info && out_info_len)
+        strncpy(out_info, "unknown_command_or_schema", out_info_len - 1);
     return handled;
 }
-static void send_ack(int sock, const struct sockaddr_in *to, bool ok)
+static void send_ack(int sock, const struct sockaddr_in *to, bool ok, const char *request_id, const char *info)
 {
-    char resp[48];
-    int n = snprintf(resp, sizeof(resp), "{\"ok\":%s}", ok ? "true" : "false");
-    if (n > 0)
+    char resp[256];
+    const char *info_safe = (info && info[0]) ? info : "";
+    if (request_id && request_id[0] != '\0')
     {
-        sendto(sock, resp, n, 0, (const struct sockaddr *)to, sizeof(*to));
+        int n = snprintf(resp, sizeof(resp), "{\"type\":\"ack\",\"request_id\":\"%s\",\"ok\":%s,\"info\":\"%s\"}", request_id, ok ? "true" : "false", info_safe);
+        if (n > 0)
+            sendto(sock, resp, n, 0, (const struct sockaddr *)to, sizeof(*to));
+    }
+    else
+    {
+        int n = snprintf(resp, sizeof(resp), "{\"type\":\"ack\",\"ok\":%s,\"info\":\"%s\"}", ok ? "true" : "false", info_safe);
+        if (n > 0)
+            sendto(sock, resp, n, 0, (const struct sockaddr *)to, sizeof(*to));
     }
 }
 
@@ -170,8 +236,27 @@ static void cmd_led_task(void *arg)
             ESP_LOGI(TAG, "rx %dB de %s:%u -> %s",
                      n, inet_ntoa(from.sin_addr), (unsigned)ntohs(from.sin_port), buf);
 
-            bool ok = handle_json(buf, n);
-            send_ack(sock, &from, ok);
+            // extraer request_id si existe en root.payload.request_id o root.request_id
+            char reqid[64] = {0};
+            cJSON *root = cJSON_ParseWithLength(buf, n);
+            if (root)
+            {
+                cJSON *payload = cJSON_GetObjectItemCaseSensitive(root, "payload");
+                cJSON *rid = NULL;
+                if (cJSON_IsObject(payload))
+                    rid = cJSON_GetObjectItemCaseSensitive(payload, "request_id");
+                if (!rid)
+                    rid = cJSON_GetObjectItemCaseSensitive(root, "request_id");
+                if (rid && cJSON_IsString(rid) && rid->valuestring)
+                {
+                    strncpy(reqid, rid->valuestring, sizeof(reqid) - 1);
+                }
+                cJSON_Delete(root);
+            }
+
+            char info[128] = {0};
+            bool ok = handle_json(buf, n, info, sizeof(info));
+            send_ack(sock, &from, ok, reqid[0] ? reqid : NULL, info);
         }
 
         // Añade un pequeño delay para cooperar con el scheduler

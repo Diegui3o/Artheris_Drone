@@ -56,7 +56,11 @@ static void system_init_task(void *arg)
 
     // --- LEDs ---
     ESP_LOGI(TAG, "Inicializando LEDs...");
+    // Inicializa pines digitales y el LED RGB integrado
     leds_init();
+    rgb_led_init();
+    // Por defecto empieza en blanco
+    rgb_led_set(255, 255, 255);
     ESP_LOGI(TAG, "LEDs inicializados");
 
     // --- CMD LED (server UDP non-blocking en core 0) ---

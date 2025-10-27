@@ -1,86 +1,63 @@
 #include "led.h"
+#include "led_strip.h"
+#include "driver/rmt_tx.h"
 #include "driver/gpio.h"
-#include "driver/rmt.h"
 #include "esp_log.h"
-#include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-static const char *TAG = "LED";
+static const char *TAG = "RGB";
 
-// RMT-based minimal driver para un solo LED WS2812 (GRB)
-static rmt_channel_t s_rmt_channel = RMT_CHANNEL_0;
-static gpio_num_t s_rmt_gpio = GPIO_NUM_48; // pin del LED RGB integrado
-
-// Timings en ticks para resolución de 10MHz (0.1us por tick)
-// WS2812 timings aproximados: T0H=0.4us, T0L=0.85us, T1H=0.8us, T1L=0.45us
-#define RMT_TICKS_PER_US 10 // 10MHz -> 10 ticks/us
-#define WS2812_T0H (4 * RMT_TICKS_PER_US)
-#define WS2812_T0L (9 * RMT_TICKS_PER_US)
-#define WS2812_T1H (8 * RMT_TICKS_PER_US)
-#define WS2812_T1L (5 * RMT_TICKS_PER_US)
+static led_strip_handle_t led_strip;
 
 void rgb_led_init(void)
 {
-    rmt_config_t config = RMT_DEFAULT_CONFIG_TX(s_rmt_gpio, s_rmt_channel);
-    // ajustamos clk_div para tener ~10MHz: APB_CLK (80MHz) / clk_div -> ticks
-    // RMT_DEFAULT_CONFIG_TX establece clk_div = 80; en su lugar dejamos por defecto y usamos duraciones en ticks
-    config.clk_div = 8; // 80MHz/8 = 10MHz
-    esp_err_t err = rmt_config(&config);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "rmt_config failed: %d", err);
-        return;
-    }
-    err = rmt_driver_install(config.channel, 0, 0);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "rmt_driver_install failed: %d", err);
-        return;
-    }
-}
+    // Configuración del LED strip
+    led_strip_config_t strip_config = {
+        .strip_gpio_num = 48,
+        .max_leds = 1,
+        .led_model = LED_MODEL_WS2812,
+        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
+        .flags.invert_out = false,
+    };
 
-static void ws2812_write_pixel(uint8_t g, uint8_t r, uint8_t b)
-{
-    // WS2812 usa orden GRB
-    rmt_item32_t items[24];
-    uint32_t val = ((uint32_t)g << 16) | ((uint32_t)r << 8) | b;
-    for (int i = 0; i < 24; ++i)
-    {
-        // bit más significativo primero
-        bool bit = (val & (1u << (23 - i))) != 0;
-        if (bit)
-        {
-            items[i].level0 = 1;
-            items[i].duration0 = WS2812_T1H;
-            items[i].level1 = 0;
-            items[i].duration1 = WS2812_T1L;
-        }
-        else
-        {
-            items[i].level0 = 1;
-            items[i].duration0 = WS2812_T0H;
-            items[i].level1 = 0;
-            items[i].duration1 = WS2812_T0L;
-        }
-    }
-    // Enviar y esperar a que termine
-    rmt_write_items(s_rmt_channel, items, 24, true);
-    // Reset >50us
-    vTaskDelay(pdMS_TO_TICKS(1));
+    // Configuración RMT backend
+    led_strip_rmt_config_t rmt_config = {
+        .resolution_hz = 10 * 1000 * 1000, // 10MHz
+        .flags.with_dma = false,           // para ESP32-S3 se recomienda false  :contentReference[oaicite:1]{index=1}
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .mem_block_symbols = 0 // usa default
+    };
+
+    ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
+
+    ESP_LOGI(TAG, "RGB LED inicializado en GPIO48");
+
+    // Inicialmente en amarillo
+    ESP_ERROR_CHECK(led_strip_set_pixel(led_strip, 0, 255, 255, 0));
+    ESP_ERROR_CHECK(led_strip_refresh(led_strip));
 }
 
 void rgb_led_set(uint8_t r, uint8_t g, uint8_t b)
 {
-    ws2812_write_pixel(g, r, b);
+    ESP_LOGI(TAG, "rgb_led_set -> r=%u g=%u b=%u", (unsigned)r, (unsigned)g, (unsigned)b);
+    ESP_ERROR_CHECK(led_strip_set_pixel(led_strip, 0, r, g, b));
+    ESP_ERROR_CHECK(led_strip_refresh(led_strip));
+    // small delay to ensure RMT transfer completes and reset time
+    vTaskDelay(pdMS_TO_TICKS(1));
 }
 
 void rgb_led_off(void)
 {
-    ws2812_write_pixel(0, 0, 0);
+    ESP_LOGI(TAG, "rgb_led_off() called");
+    // Use explicit set_pixel to ensure single-pixel boards are cleared
+    ESP_ERROR_CHECK(led_strip_set_pixel(led_strip, 0, 0, 0, 0));
+    ESP_ERROR_CHECK(led_strip_refresh(led_strip));
+    vTaskDelay(pdMS_TO_TICKS(1));
 }
 
-// Estado en RAM
+// ------------------ API para LEDs digitales (no-RGB) ------------------
+// Estado en RAM para los pines definidos en led.h
 static bool s_led_state[sizeof(LED_PINS) / sizeof(LED_PINS[0])] = {false};
 
 static inline bool led_id_ok(uint8_t n) { return (n >= 1) && (n <= leds_count()); }
@@ -125,7 +102,6 @@ bool led_set(uint8_t id, bool on)
     }
     gpio_set_level(led_pin(id), to_level(on));
     s_led_state[id - 1] = on;
-    // ESP_LOGI(TAG, "LED %u -> %s", id, on ? "ON" : "OFF");
     return true;
 }
 
