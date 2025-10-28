@@ -69,7 +69,7 @@ static void system_init_task(void *arg)
 
     motor_ctrl_init();
     // motor_ctrl_calibrate_esc(); // <-- se arma automáticamente
-    cmd_motor_start(8887, 5);
+    cmd_motor_start(8888, 5);
 
     // --- CMD LED (server UDP non-blocking en core 0) ---
     bool started = cmd_led_start_core0(8888, 5);

@@ -121,10 +121,11 @@ void handle_motor_cmd(cJSON *root)
 
 static void cmd_motor_task(void *arg)
 {
+    uint16_t port = (uint16_t)(uintptr_t)arg;
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
     struct sockaddr_in me = {0};
     me.sin_family = AF_INET;
-    me.sin_port = htons(8889);
+    me.sin_port = htons(port);
     me.sin_addr.s_addr = htonl(INADDR_ANY);
 
     bind(sock, (struct sockaddr *)&me, sizeof(me));
@@ -159,10 +160,9 @@ static void cmd_motor_task(void *arg)
     vTaskDelete(NULL);
 }
 
-bool cmd_motor_start(uint16_t port /*(opcional, ya no lo usas)*/, int prio)
+bool cmd_motor_start(uint16_t port, int prio)
 {
-    // Si vas a escuchar en 8887 y 8889 siempre, el 'port' no es necesario.
     (void)port;
     return xTaskCreatePinnedToCore(cmd_motor_task, "cmd_motor",
-                                   4096, NULL, prio, NULL, 0) == pdPASS;
+                                   4096, (void *)(uintptr_t)port, prio, NULL, 0) == pdPASS;
 }

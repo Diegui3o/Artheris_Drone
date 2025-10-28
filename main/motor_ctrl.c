@@ -10,7 +10,7 @@
 #define MOTOR_COUNT 4
 static const int motor_pins[MOTOR_COUNT] = {10, 11, 12, 13};
 
-#define PWM_FREQ_HZ 500
+#define PWM_FREQ_HZ 50
 #define PWM_MIN_US 1000
 #define PWM_MAX_US 2000
 #define PWM_IDLE_US 1170
@@ -51,7 +51,7 @@ bool motor_ctrl_init(void)
             .group_id = i / 2,
             .clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT,
             .resolution_hz = 1000000, // 1 MHz → 1 tick = 1 µs
-            .period_ticks = 20000,    // 20 000 µs = 20 ms → 50 Hz
+            .period_ticks = PWM_PERIOD_US,
             .count_mode = MCPWM_TIMER_COUNT_MODE_UP,
         };
         mcpwm_new_timer(&timer_config, &timer);
