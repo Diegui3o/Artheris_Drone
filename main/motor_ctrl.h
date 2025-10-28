@@ -9,6 +9,7 @@
 #define MOTOR_PWM_FREQ_HZ 500
 
 bool motor_ctrl_init(void);
+void motor_ctrl_calibrate_esc(void);
 void motor_ctrl_arm_sequence(void);
 void motor_ctrl_stop_all(void);
 void motor_ctrl_apply_control(float tau_x, float tau_y, float tau_z, float inputThrottle);

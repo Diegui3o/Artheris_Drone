@@ -67,9 +67,6 @@ bool motor_ctrl_init(void)
         mcpwm_generator_config_t gen_config = {.gen_gpio_num = motor_pins[i]};
         mcpwm_new_generator(oper, &gen_config, &generator);
 
-        // Configurar la polaridad según tu ESC
-        // Generador: poner HIGH al inicio del periodo (EMPTY) y LOW en el evento de comparación
-        // Esto produce un pulso HIGH con duración = compare_value (en µs), que es lo que esperan los ESC/servos.
         mcpwm_generator_set_action_on_timer_event(generator,
                                                   MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH));
         mcpwm_generator_set_action_on_compare_event(generator,
@@ -83,27 +80,15 @@ bool motor_ctrl_init(void)
 
     ESP_LOGI(TAG, "==== Calibrando y armando ESCs (50 Hz PWM) ====");
 
-    // Paso 1: mínimo
-    for (int i = 0; i < MOTOR_COUNT; i++)
-        set_pulse_us(i, 1000);
-    vTaskDelay(pdMS_TO_TICKS(500));
-
-    // Por seguridad dejamos las señales en mínimo. La calibración/arming
-    // debe ejecutarse explícitamente mediante motor_ctrl_arm_sequence()
-    // para evitar que la secuencia automática interfiera con el orden de
-    // conexión de la batería del usuario (muchos ESC requieren conectar
-    // la batería con el throttle en HIGH para entrar en modo calibración).
+    // ✅ Dejar en mínimo seguro (no en idle)
     for (int i = 0; i < MOTOR_COUNT; i++)
         set_pulse_us(i, PWM_MIN_US);
-
-    ESP_LOGI(TAG, "MCPWM listo. Llamar a motor_ctrl_arm_sequence() para calibrar/armar ESCs cuando estés listo.");
-
+    ESP_LOGI(TAG, "Calibración finalizada. Motores en reposo (PWM_MIN).");
     return true;
 }
 
 // Secuencia de calibración/arming que el usuario puede invocar cuando
-// tenga el control sobre el orden de conexión de la batería.
-void motor_ctrl_arm_sequence(void)
+void motor_ctrl_calibrate_esc(void)
 {
     ESP_LOGI(TAG, "Iniciando secuencia de arming/calibración de ESCs...");
 
@@ -132,8 +117,15 @@ void motor_ctrl_arm_sequence(void)
     for (int i = 0; i < MOTOR_COUNT; i++)
         set_pulse_us(i, PWM_MIN_US);
     vTaskDelay(pdMS_TO_TICKS(500));
+    // Paso 3: volver a mínimo para completar calibración
+    for (int i = 0; i < MOTOR_COUNT; i++)
+        set_pulse_us(i, PWM_MIN_US);
+    vTaskDelay(pdMS_TO_TICKS(3000));
 
-    ESP_LOGI(TAG, "Secuencia de arming/calibración completada.");
+    // ✅ Dejar en mínimo seguro (no en idle)
+    for (int i = 0; i < MOTOR_COUNT; i++)
+        set_pulse_us(i, PWM_MIN_US);
+    ESP_LOGI(TAG, "Calibración finalizada. Motores en reposo (PWM_MIN).");
 }
 
 // =========================================================
