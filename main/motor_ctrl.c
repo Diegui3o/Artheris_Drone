@@ -10,7 +10,7 @@
 #define MOTOR_COUNT 4
 static const int motor_pins[MOTOR_COUNT] = {10, 11, 12, 13};
 
-#define PWM_FREQ_HZ 50
+#define PWM_FREQ_HZ 500
 #define PWM_MIN_US 1000
 #define PWM_MAX_US 2000
 #define PWM_IDLE_US 1170

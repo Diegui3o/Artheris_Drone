@@ -1,10 +1,8 @@
 #include "cmd.h"
 #include "led.h"
 #include "driver/gpio.h"
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
 #include "lwip/sockets.h"
 #include "lwip/inet.h"
 #include <fcntl.h>
@@ -14,6 +12,8 @@
 #include <stdlib.h>
 #include "esp_system.h"
 #include "mode_control.h"
+#include "motor_ctrl.h"
+#include "cmd_motor.h"
 
 static const char *TAG = "CMD_LED";
 static TaskHandle_t s_cmd_task = NULL;
@@ -206,7 +206,39 @@ static bool handle_json(const char *msg, int len, char *out_info, size_t out_inf
             goto out;
         }
     }
+    cJSON *motor = cJSON_GetObjectItemCaseSensitive(root, "motor");
+    cJSON *motors = cJSON_GetObjectItemCaseSensitive(root, "motors");
 
+    if (!motor && !motors)
+    {
+        cJSON *payload = cJSON_GetObjectItemCaseSensitive(root, "payload");
+        if (cJSON_IsObject(payload))
+        {
+            motor = cJSON_GetObjectItemCaseSensitive(payload, "motor");
+            motors = cJSON_GetObjectItemCaseSensitive(payload, "motors");
+            if (!motor && !motors)
+            {
+                // manejar payload.payload por si viene doblemente anidado
+                cJSON *payload2 = cJSON_GetObjectItemCaseSensitive(payload, "payload");
+                if (cJSON_IsObject(payload2))
+                {
+                    motor = cJSON_GetObjectItemCaseSensitive(payload2, "motor");
+                    motors = cJSON_GetObjectItemCaseSensitive(payload2, "motors");
+                }
+            }
+        }
+    }
+
+    if (motor || motors)
+    {
+        ESP_LOGI(TAG, "handle_json: comando motor detectado (motor? %d, motors? %d)",
+                 motor ? 1 : 0, motors ? 1 : 0);
+        handle_motor_cmd(root); // handle_motor_cmd ya sabe "descender" a payload
+        handled = true;
+        if (out_info && out_info_len)
+            strncpy(out_info, "motor_command", out_info_len - 1);
+        goto out;
+    }
 out:
     cJSON_Delete(root);
     if (!handled && out_info && out_info_len)

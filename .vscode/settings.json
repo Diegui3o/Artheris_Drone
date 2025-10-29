@@ -24,7 +24,8 @@
     "esp_heap_caps.h": "c",
     "inet.h": "c",
     "stdint.h": "c",
-    "esp_event.h": "c"
+    "esp_event.h": "c",
+    "gpio.h": "c"
   },
   "idf.flashType": "UART"
 }

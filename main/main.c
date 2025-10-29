@@ -68,8 +68,6 @@ static void system_init_task(void *arg)
     mode_control_start_core1(10);
 
     motor_ctrl_init();
-    // motor_ctrl_calibrate_esc(); // <-- se arma automáticamente
-    cmd_motor_start(8888, 5);
 
     // --- CMD LED (server UDP non-blocking en core 0) ---
     bool started = cmd_led_start_core0(8888, 5);
@@ -85,7 +83,7 @@ static void system_init_task(void *arg)
     ESP_LOGI(TAG, "IMU iniciado");
 
     // --- Telemetría ---
-    telemetry_start_core0("192.168.1.36", 8889, 5);
+    telemetry_start_core0("192.168.1.43", 8889, 5);
     ESP_LOGI(TAG, "Telemetry started");
 
     // --- Control task ---

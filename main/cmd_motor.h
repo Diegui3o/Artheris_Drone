@@ -1,8 +1,16 @@
 #ifndef CMD_MOTOR_H
 #define CMD_MOTOR_H
 
-#include <stdbool.h>
+#include "cJSON.h"
 
-bool cmd_motor_start(int port, int max_clients);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void handle_motor_cmd(cJSON *root);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // CMD_MOTOR_H
