@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "manual_mode.h"
 
 static const char *TAG = "MODE_CTRL";
 
@@ -43,29 +44,36 @@ void changeMode(drone_mode_t newMode)
 
 static void mode_control_task(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Tarea de modo iniciada en core 1");
+    ESP_LOGI(TAG, "Tarea de modo iniciada en core %d", xPortGetCoreID());
 
     for (;;)
     {
         if (modoActual != lastMode)
         {
+            drone_mode_t prev = lastMode;
             lastMode = modoActual;
-            ESP_LOGI(TAG, "Detectado cambio de modo: %d", modoActual);
-            // Aquí lógica adicional por modo
+            ESP_LOGI(TAG, "Detectado cambio de modo: %d -> %d", prev, modoActual);
+
+            // Stop del modo previo
+            if (prev == MODE_MANUAL)
+            {
+                manual_mode_stop();
+            }
+
             switch (modoActual)
             {
             case MODE_PILOT:
                 ESP_LOGI(TAG, "Acción: piloto activado");
-                // setup_pilote_mode();
                 break;
+
             case MODE_MANUAL:
                 ESP_LOGI(TAG, "Acción: manual activado");
-                // setup_manual_mode();
+                manual_mode_start(); // <-- crea task en core 0, prio máxima, timer 1 kHz
                 break;
+
             case MODE_WAIT:
             default:
                 ESP_LOGI(TAG, "Acción: espera activado");
-                // apagarMotores();
                 break;
             }
         }
@@ -75,5 +83,6 @@ static void mode_control_task(void *pvParameters)
 
 void mode_control_start_core1(int priority)
 {
+    // Deja este task en CORE 1 (coordina cambios de modo)
     xTaskCreatePinnedToCore(mode_control_task, "mode_ctrl", 4096, NULL, priority, NULL, 1);
 }

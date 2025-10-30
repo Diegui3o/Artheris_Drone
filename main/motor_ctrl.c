@@ -3,7 +3,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <math.h>
-// Opcional: secuencia de pitidos en un buzzer pasivo/activo
 #include "driver/gpio.h"
 
 #define TAG "MOTOR"

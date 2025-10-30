@@ -29,6 +29,15 @@ static const int ThrottleCutOff = 1000; // µs
 #define MAX_INTEGRAL_YAW 300.0f
 
 static const char *TAG_MAN = "MANUAL";
+// Raw sample + new flag (escrito por ISR, leido por la tarea)
+static volatile uint32_t raw_pw[6] = {1500, 1500, 1000, 1500, 1000, 1000};
+static volatile uint8_t raw_new[6] = {0, 0, 0, 0, 0, 0};
+
+// Filter buffers (para media móvil) — no volátiles, usados por la tarea
+#define RC_FILT_LEN 4
+
+// ReceiverValue: variable que usa el resto del programa (ya la tenías)
+static volatile uint32_t ReceiverValue[6] = {1500, 1500, 1000, 1500, 1000, 1000};
 
 // === LQR gains (will be updated online per throttle as in your sketch) ===
 static float Ki_at[3][3] = {
@@ -39,11 +48,6 @@ static float Kc_at[3][6] = {
     {1.63f, 0, 0, 0.353f, 0, 0},
     {0, 2.30f, 0, 0, 0.10f, 0},
     {0, 0, 5.3f, 0, 0, 0.2f}};
-
-// === RC input (PPM/SBUS decoded externally to 6 PWM channels) ===
-// We measure pulse width with GPIO edge interrupts and esp_timer_get_time().
-// Expect ~1000–2000 us range.
-static volatile uint32_t ReceiverValue[6] = {1500, 1500, 1000, 1500, 1000, 1000};
 
 static volatile uint8_t last_lvl[6] = {0};
 static volatile int64_t t_rise[6] = {0};
@@ -79,7 +83,6 @@ static void IRAM_ATTR rc_gpio_isr(void *arg)
 
     if (lvl && !last_lvl[idx])
     {
-        // Rising edge
         last_lvl[idx] = 1;
         t_rise[idx] = now;
     }
@@ -90,7 +93,7 @@ static void IRAM_ATTR rc_gpio_isr(void *arg)
         int64_t pw = now - t_rise[idx];
         if (pw >= 800 && pw <= 2500)
         {
-            ReceiverValue[idx] = (uint32_t)pw;
+            __atomic_store_n(&ReceiverValue[idx], (uint32_t)pw, __ATOMIC_RELAXED);
         }
     }
 }
@@ -126,13 +129,13 @@ static void motors_init_example(void)
 static TaskHandle_t s_manual_task = NULL;
 static esp_timer_handle_t s_tick_1khz = NULL;
 
-static void IRAM_ATTR tick_1khz_cb(void *arg)
+static void tick_1khz_cb(void *arg)
 {
-    BaseType_t hp_woken = pdFALSE;
+    // Callback muy breve: notifica la tarea del loop manual.
     if (s_manual_task)
-        vTaskNotifyGiveFromISR(s_manual_task, &hp_woken);
-    if (hp_woken)
-        portYIELD_FROM_ISR();
+    {
+        xTaskNotifyGive(s_manual_task);
+    }
 }
 
 // Integrators & temps
@@ -141,26 +144,23 @@ static float tau_x = 0, tau_y = 0, tau_z = 0;
 
 static inline float constrain_f(float x, float mn, float mx) { return x < mn ? mn : (x > mx ? mx : x); }
 
-static void manual_loop_task(void *arg)
+void manual_loop_task(void *pvParameters)
 {
     ESP_LOGI(TAG_MAN, "Manual loop task on core %d", xPortGetCoreID());
-
-    // Local variables analogous to your Arduino code
     for (;;)
     {
-        // Wait for 1 kHz tick
+        // Esperar tick de 1 ms del esp_timer
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-        if (getMode() != MODE_MANUAL)
+        uint32_t localRV[6];
+        for (int i = 0; i < 6; ++i)
         {
-            // Safety: if mode changed while running
-            continue;
+            localRV[i] = __atomic_load_n(&ReceiverValue[i], __ATOMIC_RELAXED);
         }
 
         // === 1) Read RC desired angles ===
         float DesiredAngleRoll = 0.1f * ((int)ReceiverValue[0] - 1500);
         float DesiredAnglePitch = 0.1f * ((int)ReceiverValue[1] - 1500);
-        uint32_t InputThrottle = ReceiverValue[2];
+        uint32_t InputThrottle = 1500;
         float DesiredAngleYaw = 0.15f * ((int)ReceiverValue[3] - 1500);
 
         if (InputThrottle > 1020 && InputThrottle < 2000)
@@ -169,18 +169,19 @@ static void manual_loop_task(void *arg)
             float k1 = 3.10f - (1.2f / (1.0f + expf(((float)InputThrottle - 1429.0f) / -47.0f))) - (1.0f / (1.0f + expf(((float)InputThrottle - 1609.0f) / -52.8f)));
             float k2 = k1;
             float k3 = 2.10f - (1.2f / (1.0f + expf(((float)InputThrottle - 1429.0f) / -47.0f))) - (1.0f / (1.0f + expf(((float)InputThrottle - 1609.0f) / -52.8f)));
-            float m1 = 2.6f - (4.77f / (1.0f + powf(((float)InputThrottle / 1553.664f), 5.419f)));
             float g1 = 2.10f - (-0.15f / (1.0f + expf(((float)InputThrottle - 1549.0f) / -26.6f))) - (1.35f / (1.0f + expf(((float)InputThrottle - 1399.0f) / -65.3f)));
             float g2 = g1;
             float g3 = 15.3f - (0.3f / (1.0f + expf(((float)InputThrottle - 1539.0f) / -39.0f))) - (1.35f / (1.0f + expf(((float)InputThrottle - 1369.0f) / -40.1f)));
-            float m2 = 2.6f - (4.77f / (1.0f + powf(((float)InputThrottle / 1553.664f), 5.419f)));
             Kc_at[0][0] = k1;
             Kc_at[1][1] = k2;
             Kc_at[2][2] = k3;
             Kc_at[0][3] = g1;
             Kc_at[1][4] = g2;
             Kc_at[2][5] = g3;
-            Ki_at[0][0] = m2; // keep your choice (m1/m2) for roll integral gain
+            float m1 = 2.6 - (4.77 / (1.0 + powf(((float)InputThrottle / 1553.664f), 5.419f)));
+            Ki_at[0][0] = m1; // roll
+            float m2 = 2.6 - (4.77 / (1.0 + powf(((float)InputThrottle / 1553.664f), 5.419f)));
+            Ki_at[1][1] = m2; // pitch (antes sobrescribías Ki_at[0][0])
 
             // === 3) References (deg -> rad) with dead‑zone ===
             float phi_ref = (DesiredAngleRoll / 2.8f) * (float)M_PI / 180.0f;
@@ -286,9 +287,8 @@ void manual_mode_start(void)
         const esp_timer_create_args_t args = {
             .callback = &tick_1khz_cb,
             .arg = NULL,
-            .dispatch_method = ESP_TIMER_TASK, // seguro en v5.5.1
+            .dispatch_method = ESP_TIMER_TASK, // CALLBACK corre en tarea, no ISR
             .name = "man_1khz"};
-        // Crear el timer y guardar el handle
         ESP_ERROR_CHECK(esp_timer_create(&args, &s_tick_1khz));
     }
 
