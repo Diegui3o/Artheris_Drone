@@ -36,7 +36,7 @@ void changeMode(drone_mode_t newMode)
         break;
     case MODE_WAIT:
     default:
-        rgb_led_set(255, 255, 255);
+        rgb_led_set(127.5, 127.5, 127.5);
         ESP_LOGI(TAG, "Modo espera activado");
         break;
     }

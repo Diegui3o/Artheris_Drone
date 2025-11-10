@@ -17,12 +17,22 @@
 #include "mode_control.h"
 #include "motor_ctrl.h"
 #include "cmd_motor.h"
+#include "Arduino.h"
 
 #define I2C_PORT I2C_NUM_0
 #define I2C_SDA 8
 #define I2C_SCL 9
 
 static const char *TAG = "APP";
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+    void initArduino(void);
+#ifdef __cplusplus
+}
+#endif
 
 static void system_init_task(void *arg)
 {
@@ -61,8 +71,10 @@ static void system_init_task(void *arg)
     // Inicializa pines digitales y el LED RGB integrado
     leds_init();
     rgb_led_init();
+    initArduino();
+
     // Por defecto empieza en blanco
-    rgb_led_set(255, 255, 255);
+    rgb_led_set(127.5, 127.5, 127.5);
     ESP_LOGI(TAG, "LEDs inicializados");
 
     mode_control_start_core1(10);
@@ -70,8 +82,8 @@ static void system_init_task(void *arg)
     motor_ctrl_init();
 
     // --- CMD LED (server UDP non-blocking en core 0) ---
-    bool started = cmd_led_start_core0(8888, 5);
-    ESP_LOGI(TAG, "cmd_led_start_core0 -> %s", started ? "OK" : "FAIL");
+    bool started = cmd_start_core0(8888, 5);
+    ESP_LOGI(TAG, "cmd_start_core0 -> %s", started ? "OK" : "FAIL");
 
     // --- IMU ---
     ESP_LOGI(TAG, "Inicializando IMU...");
@@ -83,7 +95,7 @@ static void system_init_task(void *arg)
     ESP_LOGI(TAG, "IMU iniciado");
 
     // --- Telemetría ---
-    telemetry_start_core0("192.168.1.43", 8889, 5);
+    telemetry_start_core0("192.168.1.66", 8889, 5);
     ESP_LOGI(TAG, "Telemetry started");
 
     // --- Control task ---

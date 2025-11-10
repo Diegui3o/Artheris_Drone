@@ -15,7 +15,7 @@
 #include "motor_ctrl.h"
 #include "cmd_motor.h"
 
-static const char *TAG = "CMD_LED";
+static const char *TAG = "CMD";
 static TaskHandle_t s_cmd_task = NULL;
 
 static inline int _to_level(bool on)
@@ -263,12 +263,12 @@ static void send_ack(int sock, const struct sockaddr_in *to, bool ok, const char
     }
 }
 
-static void cmd_led_task(void *arg)
+static void cmd_task(void *arg)
 {
     uint16_t listen_port = (uint16_t)(uintptr_t)arg;
 
-    ESP_LOGI(TAG, "cmd_led_task: inicio (listen_port=%u)", (unsigned)listen_port);
-    ESP_LOGI(TAG, "cmd_led_task: core=%d", esp_cpu_get_core_id());
+    ESP_LOGI(TAG, "cmd_task: inicio (listen_port=%u)", (unsigned)listen_port);
+    ESP_LOGI(TAG, "cmd_task: core=%d", esp_cpu_get_core_id());
 
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
     if (sock < 0)
@@ -336,13 +336,13 @@ static void cmd_led_task(void *arg)
     }
 }
 
-bool cmd_led_start_core0(uint16_t listen_port, int priority)
+bool cmd_start_core0(uint16_t listen_port, int priority)
 {
-    ESP_LOGI(TAG, "cmd_led_start_core0: llamada (port=%u, prio=%d)", (unsigned)listen_port, priority);
+    ESP_LOGI(TAG, "cmd_start_core0: llamada (port=%u, prio=%d)", (unsigned)listen_port, priority);
     if (s_cmd_task)
         return true;
     BaseType_t ok = xTaskCreatePinnedToCore(
-        cmd_led_task, "cmd_led", 4096, (void *)(uintptr_t)listen_port, priority, &s_cmd_task, 1);
+        cmd_task, "cmd", 4096, (void *)(uintptr_t)listen_port, priority, &s_cmd_task, 1);
 
     return ok == pdPASS;
 }
