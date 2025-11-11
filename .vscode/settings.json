@@ -5,7 +5,7 @@
   "idf.openOcdConfigs": [
     "board/esp32s3-builtin.cfg"
   ],
-  "idf.portWin": "COM5",
+  "idf.portWin": "COM6",
   "idf.toolsPathWin": "C:\\Espressif",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3"
@@ -25,7 +25,9 @@
     "inet.h": "c",
     "stdint.h": "c",
     "esp_event.h": "c",
-    "gpio.h": "c"
+    "gpio.h": "c",
+    "freertos.h": "c",
+    "math.h": "c"
   },
   "idf.flashType": "UART"
 }

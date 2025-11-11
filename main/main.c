@@ -70,8 +70,8 @@ static void system_init_task(void *arg)
     motor_ctrl_init();
 
     // --- CMD LED (server UDP non-blocking en core 0) ---
-    bool started = cmd_led_start_core0(8888, 5);
-    ESP_LOGI(TAG, "cmd_led_start_core0 -> %s", started ? "OK" : "FAIL");
+    bool started = cmd_start_core0(8888, 5);
+    ESP_LOGI(TAG, "cmd_start_core0 -> %s", started ? "OK" : "FAIL");
 
     // --- IMU ---
     ESP_LOGI(TAG, "Inicializando IMU...");
