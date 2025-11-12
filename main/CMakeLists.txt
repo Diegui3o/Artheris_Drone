@@ -12,6 +12,7 @@ set(srcs
     "motor_ctrl.c"
     "cmd_motor.c"
     "manual_mode.c"
+    "motor_state.c"
 )
 
 idf_component_register(

@@ -2,21 +2,29 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-//
-// ===== CONFIGURACIÓN =====
-//
+// Definir constantes si no están en motor_ctrl.h
+#ifndef MOTOR_PWM_MIN_US
+#define MOTOR_PWM_MIN_US 1000
+#endif
+
+#ifndef MOTOR_PWM_MAX_US  
+#define MOTOR_PWM_MAX_US 2000
+#endif
+
+#ifndef MOTOR_PWM_IDLE_US
+#define MOTOR_PWM_IDLE_US 1100
+#endif
+
+#ifndef MOTOR_COUNT
 #define MOTOR_COUNT 4
+#endif
 
-// Valores típicos estándar ESC
-#define MOTOR_PWM_MIN_US  1000
-#define MOTOR_PWM_MAX_US  1990
-#define MOTOR_PWM_IDLE_US 1170
+// Pines de motores
+#define MOTOR1_PIN 10
+#define MOTOR2_PIN 11
+#define MOTOR3_PIN 12
+#define MOTOR4_PIN 13
 
-#define MOTOR_PWM_FREQ_HZ      200     // los ESC trabajan a 50Hz
-
-//
-// ===== API PÚBLICA REAL =====
-//
 
 // Inicializa MCPWM, pines y timers
 void motor_ctrl_init(void);
@@ -42,3 +50,4 @@ void motor_ctrl_set_all(bool on);
 
 // Aplica mezclado del dron (LQR/PID)
 void motor_ctrl_apply_control(float tau_x, float tau_y, float tau_z, float inputThrottle);
+void motor_get_inputs(uint16_t out[MOTOR_COUNT]);

@@ -7,7 +7,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/portmacro.h"
-
 #include "manual_mode.h"
 #include "mode_control.h"
 #include "imu.h"
@@ -22,24 +21,17 @@ static const int channel_3_pin = 6;
 static const int channel_4_pin = 7;
 static const int channel_5_pin = 15;
 static const int channel_6_pin = 16;
-static const int ThrottleCutOff = 1000; // µs
 
 #define TORQUE_SCALE 120.0f
 #define MAX_INTEGRAL_ROLL_PITCH 100.0f
 #define MAX_INTEGRAL_YAW 300.0f
 
 static const char *TAG_MAN = "MANUAL";
-// Raw sample + new flag (escrito por ISR, leido por la tarea)
-static volatile uint32_t raw_pw[6] = {1500, 1500, 1000, 1500, 1000, 1000};
-static volatile uint8_t raw_new[6] = {0, 0, 0, 0, 0, 0};
 
-// Filter buffers (para media móvil) — no volátiles, usados por la tarea
-#define RC_FILT_LEN 4
-
-// ReceiverValue: variable que usa el resto del programa (ya la tenías)
+// ReceiverValue: variable que usa el resto del programa
 static volatile uint32_t ReceiverValue[6] = {1500, 1500, 1000, 1500, 1000, 1000};
 
-// === LQR gains (will be updated online per throttle as in your sketch) ===
+// === LQR gains (will be updated online per throttle) ===
 static float Ki_at[3][3] = {
     {0.65f, 0.0f, 0.0f},
     {0.0f, 0.65f, 0.0f},
@@ -117,76 +109,117 @@ static void rc_gpio_init(void)
     }
 }
 
-// ====== LEDC (motors) example init (keep your own implementation if you already have) ======
-static void motors_init_example(void)
-{
-    // Placeholder: this project uses MCPWM in motor_ctrl.c to drive ESCs.
-    // If you want LEDC-based PWM, implement it here. For now do nothing.
-    ESP_LOGI(TAG_MAN, "motors_init_example: no-op (using MCPWM in motor_ctrl.c)");
-}
-
 // ====== 1 kHz scheduler via esp_timer ======
 static TaskHandle_t s_manual_task = NULL;
 static esp_timer_handle_t s_tick_1khz = NULL;
 
 static void tick_1khz_cb(void *arg)
 {
-    // Callback muy breve: notifica la tarea del loop manual.
     if (s_manual_task)
     {
         xTaskNotifyGive(s_manual_task);
     }
 }
 
-// Integrators & temps
+// Integrators
 static float integral_phi = 0, integral_theta = 0, integral_psi = 0;
 static float tau_x = 0, tau_y = 0, tau_z = 0;
 
-static inline float constrain_f(float x, float mn, float mx) { return x < mn ? mn : (x > mx ? mx : x); }
+static inline float constrain_f(float x, float mn, float mx)
+{
+    return x < mn ? mn : (x > mx ? mx : x);
+}
 
 void manual_loop_task(void *pvParameters)
 {
-    ESP_LOGI(TAG_MAN, "Manual loop task on core %d", xPortGetCoreID());
+    // Variables de estado
+    static bool motors_armed = false;
+    static bool was_low_throttle = false;
+    static int64_t prev_us = 0;
+    static float yaw_deg_int = 0.0f;
+    static int debug_counter = 0;
+
+    ESP_LOGI(TAG_MAN, "Manual loop task started");
+
     for (;;)
     {
-        // Esperar tick de 1 ms del esp_timer
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        // Leer valores RC de forma atómica
         uint32_t localRV[6];
         for (int i = 0; i < 6; ++i)
         {
             localRV[i] = __atomic_load_n(&ReceiverValue[i], __ATOMIC_RELAXED);
         }
 
-        // === 1) Read RC desired angles ===
-        float DesiredAngleRoll = 0.1f * ((int)ReceiverValue[0] - 1500);
-        float DesiredAnglePitch = 0.1f * ((int)ReceiverValue[1] - 1500);
-        uint32_t InputThrottle = 1500;
-        float DesiredAngleYaw = 0.15f * ((int)ReceiverValue[3] - 1500);
-
-        if (InputThrottle > 1020 && InputThrottle < 2000)
+        // Debug: mostrar valores cada 2 segundos
+        if (debug_counter++ % 2000 == 0)
         {
-            // === 2) Gain scheduling (as in your sketch) ===
-            float k1 = 3.10f - (1.2f / (1.0f + expf(((float)InputThrottle - 1429.0f) / -47.0f))) - (1.0f / (1.0f + expf(((float)InputThrottle - 1609.0f) / -52.8f)));
+            ESP_LOGI(TAG_MAN, "RC: AIL:%d ELE:%d THR:%d RUD:%d",
+                     localRV[0], localRV[1], localRV[2], localRV[3]);
+        }
+
+        // === 1) Parsear valores RC ===
+        float DesiredAngleRoll = 0.1f * ((int)localRV[0] - 1500);
+        float DesiredAnglePitch = 0.1f * ((int)localRV[1] - 1500);
+        uint32_t InputThrottle = localRV[2];
+        float DesiredAngleYaw = 0.15f * ((int)localRV[3] - 1500);
+
+        // === 2) Lógica de arming ===
+        const uint32_t THROTTLE_DEADZONE_MIN = 1010;
+        const uint32_t THROTTLE_DEADZONE_MAX = 1030;
+
+        if (InputThrottle < THROTTLE_DEADZONE_MIN)
+        {
+            was_low_throttle = true;
+        }
+
+        if (!motors_armed && was_low_throttle && InputThrottle > THROTTLE_DEADZONE_MAX)
+        {
+            motors_armed = true;
+            was_low_throttle = false;
+            integral_phi = integral_theta = integral_psi = 0;
+            yaw_deg_int = 0;
+            ESP_LOGI(TAG_MAN, "Motores armados! Throttle=%d", InputThrottle);
+        }
+
+        if (motors_armed && InputThrottle < THROTTLE_DEADZONE_MIN)
+        {
+            motors_armed = false;
+            was_low_throttle = true;
+            ESP_LOGI(TAG_MAN, "Motores desarmados!");
+        }
+
+        // === 3) Control activo solo si motores armados ===
+        if (motors_armed && InputThrottle > THROTTLE_DEADZONE_MAX)
+        {
+            // Aplicar deadzone al throttle
+            uint32_t effective_throttle = InputThrottle;
+            if (InputThrottle < THROTTLE_DEADZONE_MAX)
+            {
+                effective_throttle = THROTTLE_DEADZONE_MAX;
+            }
+
+            // === 3) Gain scheduling (as in your sketch) ===
+            float k1 = 3.10f - (1.2f / (1.0f + expf(((float)effective_throttle - 1429.0f) / -47.0f))) - (1.0f / (1.0f + expf(((float)effective_throttle - 1609.0f) / -52.8f)));
             float k2 = k1;
-            float k3 = 2.10f - (1.2f / (1.0f + expf(((float)InputThrottle - 1429.0f) / -47.0f))) - (1.0f / (1.0f + expf(((float)InputThrottle - 1609.0f) / -52.8f)));
-            float g1 = 2.10f - (-0.15f / (1.0f + expf(((float)InputThrottle - 1549.0f) / -26.6f))) - (1.35f / (1.0f + expf(((float)InputThrottle - 1399.0f) / -65.3f)));
+            float k3 = 2.10f - (1.2f / (1.0f + expf(((float)effective_throttle - 1429.0f) / -47.0f))) - (1.0f / (1.0f + expf(((float)effective_throttle - 1609.0f) / -52.8f)));
+            float g1 = 2.10f - (-0.15f / (1.0f + expf(((float)effective_throttle - 1549.0f) / -26.6f))) - (1.35f / (1.0f + expf(((float)effective_throttle - 1399.0f) / -65.3f)));
             float g2 = g1;
-            float g3 = 15.3f - (0.3f / (1.0f + expf(((float)InputThrottle - 1539.0f) / -39.0f))) - (1.35f / (1.0f + expf(((float)InputThrottle - 1369.0f) / -40.1f)));
+            float g3 = 15.3f - (0.3f / (1.0f + expf(((float)effective_throttle - 1539.0f) / -39.0f))) - (1.35f / (1.0f + expf(((float)effective_throttle - 1369.0f) / -40.1f)));
+
             Kc_at[0][0] = k1;
             Kc_at[1][1] = k2;
             Kc_at[2][2] = k3;
             Kc_at[0][3] = g1;
             Kc_at[1][4] = g2;
             Kc_at[2][5] = g3;
-            float m1 = 2.6 - (4.77 / (1.0 + powf(((float)InputThrottle / 1553.664f), 5.419f)));
-            Ki_at[0][0] = m1; // roll
-            float m2 = 2.6 - (4.77 / (1.0 + powf(((float)InputThrottle / 1553.664f), 5.419f)));
-            Ki_at[1][1] = m2; // pitch (antes sobrescribías Ki_at[0][0])
 
-            // === 3) References (deg -> rad) with dead‑zone ===
+            // === 4) References (deg -> rad) with dead‑zone ===
             float phi_ref = (DesiredAngleRoll / 2.8f) * (float)M_PI / 180.0f;
             float theta_ref = (DesiredAnglePitch / 2.8f) * (float)M_PI / 180.0f;
             float psi_ref = (DesiredAngleYaw / 2.8f) * (float)M_PI / 180.0f;
+
             const float DZ = 1.5f * (float)M_PI / 180.0f;
             if (fabsf(phi_ref) < DZ)
                 phi_ref = 0.0f;
@@ -194,34 +227,31 @@ void manual_loop_task(void *pvParameters)
                 theta_ref = 0.0f;
             if (fabsf(psi_ref) < DZ)
                 psi_ref = 0.0f;
+
+            // === 5) Get actual IMU data ===
             AttitudeSample a;
             ImuSample s;
-            if (!attitude_get_latest(&a))
-            {
-                // sin actitud válida todavía
-                continue;
-            }
-            if (!imu_get_latest(&s))
+
+            if (!imu_get_latest(&s) || !attitude_get_latest(&a))
             {
                 continue;
             }
 
-            // dt a partir de IMU (en us)
+            // dt a partir de IMU
             static int64_t prev_us = 0;
             const int64_t now_us = s.t_us;
             float dt = (prev_us > 0) ? (now_us - prev_us) / 1e6f : 0.001f;
             if (dt < 0.0002f || dt > 0.01f)
-                dt = 0.001f; // clamp 0.2–10 ms
+                dt = 0.001f;
             prev_us = now_us;
 
-            // === 5) Estados actuales (rad) ===
+            // === 6) Estados actuales (rad) ===
             float roll_rad = a.roll_deg * (float)M_PI / 180.0f;
             float pitch_rad = a.pitch_deg * (float)M_PI / 180.0f;
 
-            // Yaw: integra gyro z (dps) localmente (provisional, sin magnetómetro)
+            // Yaw: integra gyro z
             static float yaw_deg_int = 0.0f;
-            yaw_deg_int += s.gyro_z_dps * dt; // integra
-            // opcional: confinar a [-180,180] para evitar overflow
+            yaw_deg_int += s.gyro_z_dps * dt;
             if (yaw_deg_int > 180.f)
                 yaw_deg_int -= 360.f;
             if (yaw_deg_int < -180.f)
@@ -232,85 +262,66 @@ void manual_loop_task(void *pvParameters)
             float gyroPitch_rad = s.gyro_y_dps * (float)M_PI / 180.0f;
             float gyroYaw_rad = s.gyro_z_dps * (float)M_PI / 180.0f;
 
-            // === 6) Errores (rad) ===
+            // === 7) Errores (rad) ===
             float error_phi = phi_ref - roll_rad;
             float error_theta = theta_ref - pitch_rad;
-            float error_psi = psi_ref - yaw_rad; // ahora sí en rad
+            float error_psi = psi_ref - yaw_rad;
 
-            // === 7) Integradores con anti-windup ===
+            // === 8) Integradores con anti-windup ===
             integral_phi = constrain_f(integral_phi + error_phi * dt, -MAX_INTEGRAL_ROLL_PITCH, MAX_INTEGRAL_ROLL_PITCH);
             integral_theta = constrain_f(integral_theta + error_theta * dt, -MAX_INTEGRAL_ROLL_PITCH, MAX_INTEGRAL_ROLL_PITCH);
             integral_psi = constrain_f(integral_psi + error_psi * dt, -MAX_INTEGRAL_YAW, MAX_INTEGRAL_YAW);
 
-            // === 8) LQR ===
+            // === 9) LQR ===
             tau_x = Ki_at[0][0] * integral_phi + Kc_at[0][0] * error_phi - Kc_at[0][3] * gyroRoll_rad;
             tau_y = Ki_at[1][1] * integral_theta + Kc_at[1][1] * error_theta - Kc_at[1][4] * gyroPitch_rad;
             tau_z = Ki_at[2][2] * integral_psi + Kc_at[2][2] * error_psi - Kc_at[2][5] * gyroYaw_rad;
 
-            // === 9) Escala torques y aplica con colectico µs ===
+            // === 10) Escala torques y aplica ===
             tau_x *= TORQUE_SCALE;
             tau_y *= TORQUE_SCALE;
             tau_z *= TORQUE_SCALE;
-            motor_ctrl_apply_control(tau_x, tau_y, tau_z, (float)InputThrottle);
+
+            motor_ctrl_apply_control(tau_x, tau_y, tau_z, (float)effective_throttle);
         }
         else
         {
-            // throttle low: decay integrators, stop
-            integral_phi *= 0.8f;
-            integral_theta *= 0.8f;
-            integral_psi *= 0.8f;
-            motor_ctrl_apply_control(0, 0, 0, 0.0f);
+            // Motores no armados
             motor_ctrl_stop_all();
         }
     }
 }
 
-static void setup_manual_once(void)
-{
-    static bool inited = false;
-    if (inited)
-        return;
-    inited = true;
-
-    ESP_LOGI(TAG_MAN, "Setup manual: GPIO/ISR + motors");
-    rc_gpio_init();
-    motors_init_example(); // remove if you already init motors elsewhere
-}
-
 void manual_mode_start(void)
 {
-    setup_manual_once();
+    rc_gpio_init();
+    ESP_LOGI(TAG_MAN, "GPIO RC initialized");
 
-    // Create 1 kHz periodic timer
+    // Crear timer de 1kHz
     if (!s_tick_1khz)
     {
         const esp_timer_create_args_t args = {
             .callback = &tick_1khz_cb,
             .arg = NULL,
-            .dispatch_method = ESP_TIMER_TASK, // CALLBACK corre en tarea, no ISR
+            .dispatch_method = ESP_TIMER_TASK,
             .name = "man_1khz"};
         ESP_ERROR_CHECK(esp_timer_create(&args, &s_tick_1khz));
     }
 
-    // Create loop task pinned to Core 0 (leave Core 1 for mode task)
-    if (!s_manual_task)
-    {
-        xTaskCreatePinnedToCore(manual_loop_task, "manual_loop", 4096, NULL, configMAX_PRIORITIES - 1, &s_manual_task, 0);
-    }
+    // Crear tarea
+    UBaseType_t prio = uxTaskPriorityGet(NULL);
+    xTaskCreatePinnedToCore(manual_loop_task, "manual_loop", 4096, NULL, prio + 3, &s_manual_task, 0);
 
-    // Start timer
-    ESP_ERROR_CHECK(esp_timer_start_periodic(s_tick_1khz, 1000)); // 1000 us = 1 kHz
-    ESP_LOGI(TAG_MAN, "Manual mode started (1 kHz)");
+    // Iniciar temporizador
+    ESP_ERROR_CHECK(esp_timer_start_periodic(s_tick_1khz, 1000));
+    ESP_LOGI(TAG_MAN, "Manual mode started");
 }
 
 void manual_mode_stop(void)
 {
     if (s_tick_1khz)
         esp_timer_stop(s_tick_1khz);
-    integral_phi *= 0.8f;
-    integral_theta *= 0.8f;
-    integral_psi *= 0.8f;
-    motor_ctrl_apply_control(0, 0, 0, (float)ThrottleCutOff);
+
     motor_ctrl_stop_all();
     ESP_LOGI(TAG_MAN, "Manual mode stopped");
 }

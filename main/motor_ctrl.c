@@ -6,90 +6,114 @@
 #include "esp_log.h"
 #include <math.h>
 #include "motor_ctrl.h"
-
-#define MCPWM0A MCPWM_OPR_A
-#define MCPWM1A MCPWM_OPR_B
-#define MCPWM2A MCPWM_OPR_A
+#include "motor_state.h"
 
 #define TAG "ESC"
-#define MOTOR1_PIN 10
-#define MOTOR2_PIN 11
-#define MOTOR3_PIN 12
-#define MOTOR4_PIN 13
+
 typedef struct
 {
     mcpwm_unit_t unit;
     mcpwm_timer_t timer;
     mcpwm_operator_t op;
+    mcpwm_io_signals_t io_signal;
     int pin;
 } motor_cfg_t;
 
+// Configuración CORREGIDA - cada motor usa su propia combinación unit/timer/op
 static const motor_cfg_t motor_cfg[MOTOR_COUNT] = {
-    {MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 10}, // motor 1
-    {MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, 11}, // motor 2
-    {MCPWM_UNIT_1, MCPWM_TIMER_0, MCPWM_OPR_A, 12}, // motor 3
-    {MCPWM_UNIT_1, MCPWM_TIMER_1, MCPWM_OPR_A, 13}, // motor 4
+    {MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, MCPWM0A, MOTOR1_PIN}, // Motor 1
+    {MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, MCPWM1A, MOTOR2_PIN}, // Motor 2
+    {MCPWM_UNIT_1, MCPWM_TIMER_0, MCPWM_OPR_A, MCPWM0A, MOTOR3_PIN}, // Motor 3
+    {MCPWM_UNIT_1, MCPWM_TIMER_1, MCPWM_OPR_A, MCPWM1A, MOTOR4_PIN}, // Motor 4
 };
 
 static bool motor_state[MOTOR_COUNT] = {false};
 
-void pwm_init_pin(mcpwm_unit_t unit, mcpwm_timer_t timer, mcpwm_io_signals_t signal, int pin)
+void pwm_init_pin(const motor_cfg_t *cfg)
 {
-    mcpwm_gpio_init(unit, signal, pin);
+    ESP_LOGI(TAG, "Inicializando Motor - Unit:%d, Timer:%d, Signal:%d, Pin:%d",
+             cfg->unit, cfg->timer, cfg->io_signal, cfg->pin);
 
-    mcpwm_config_t cfg = {
-        .frequency = 50, // 50Hz -> periodo 20ms
-        .cmpr_a = 0,     // duty arranca 0%
-        .cmpr_b = 0,
-        .counter_mode = MCPWM_UP_COUNTER,
-        .duty_mode = MCPWM_DUTY_MODE_0,
-    };
-    mcpwm_init(unit, timer, &cfg);
+    // Configurar el pin GPIO para el PWM
+    esp_err_t ret = mcpwm_gpio_init(cfg->unit, cfg->io_signal, cfg->pin);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Error inicializando GPIO: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    // Configurar el timer PWM (solo una vez por timer)
+    static bool timer_initialized[2][3] = {false}; // Para UNIT_0 y UNIT_1
+
+    if (!timer_initialized[cfg->unit][cfg->timer])
+    {
+        mcpwm_config_t pwm_config = {
+            .frequency = 200,
+            .cmpr_a = 0,
+            .cmpr_b = 0,
+            .counter_mode = MCPWM_UP_COUNTER,
+            .duty_mode = MCPWM_DUTY_MODE_0,
+        };
+
+        esp_err_t init_ret = mcpwm_init(cfg->unit, cfg->timer, &pwm_config);
+        if (init_ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Error inicializando PWM: %s", esp_err_to_name(init_ret));
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Timer inicializado - Unit:%d, Timer:%d", cfg->unit, cfg->timer);
+            timer_initialized[cfg->unit][cfg->timer] = true;
+        }
+    }
 }
 
 void esc_write_us(mcpwm_unit_t unit, mcpwm_timer_t timer, mcpwm_operator_t op, int us)
 {
-    if (us < 1000)
-        us = 1000;
-    if (us > 2000)
-        us = 2000;
+    if (us < MOTOR_PWM_MIN_US)
+        us = MOTOR_PWM_MIN_US;
+    if (us > MOTOR_PWM_MAX_US)
+        us = MOTOR_PWM_MAX_US;
+
+    // Asegurar que el duty cycle esté en modo correcto
+    mcpwm_set_duty_type(unit, timer, op, MCPWM_DUTY_MODE_0);
     mcpwm_set_duty_in_us(unit, timer, op, us);
 }
 
 void motor_ctrl_init(void)
 {
-    // Motor 1 en UNIT0, TIMER0
-    pwm_init_pin(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM0A, MOTOR1_PIN);
+    ESP_LOGI(TAG, "Inicializando controladores de motor...");
 
-    // Motor 2 en UNIT0, TIMER1
-    pwm_init_pin(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM1A, MOTOR2_PIN);
+    // Inicializar todos los motores
+    for (int i = 0; i < MOTOR_COUNT; i++)
+    {
+        pwm_init_pin(&motor_cfg[i]);
+        ESP_LOGI(TAG, "Motor %d inicializado - Unit:%d, Timer:%d, Op:%d, Pin:%d",
+                 i + 1, motor_cfg[i].unit, motor_cfg[i].timer, motor_cfg[i].op, motor_cfg[i].pin);
+    }
 
-    // Motor 3 en UNIT1, TIMER0
-    pwm_init_pin(MCPWM_UNIT_1, MCPWM_TIMER_0, MCPWM0A, MOTOR3_PIN);
+    // Espera para asegurar inicialización
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
-    // Motor 4 en UNIT1, TIMER1
-    pwm_init_pin(MCPWM_UNIT_1, MCPWM_TIMER_1, MCPWM1A, MOTOR4_PIN);
+    // CALIBRACIÓN - Paso 1: Señal máxima (2000us)
+    ESP_LOGI(TAG, "CALIBRACIÓN: Enviando 2000us a todos los motores");
+    for (int i = 0; i < MOTOR_COUNT; i++)
+    {
+        esc_write_us(motor_cfg[i].unit, motor_cfg[i].timer, motor_cfg[i].op, 2000);
+    }
+    vTaskDelay(pdMS_TO_TICKS(3000)); // Espera para calibración
 
-    ESP_LOGI(TAG, "Enviando 2000us a todos para CALIBRACION");
-
-    esc_write_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 2000);
-    esc_write_us(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, 2000);
-    esc_write_us(MCPWM_UNIT_1, MCPWM_TIMER_0, MCPWM_OPR_A, 2000);
-    esc_write_us(MCPWM_UNIT_1, MCPWM_TIMER_1, MCPWM_OPR_A, 2000);
-
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    ESP_LOGI(TAG, "Enviando 1000us para terminar CALIBRACION");
-
-    esc_write_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, 1000);
-    esc_write_us(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, 1000);
-    esc_write_us(MCPWM_UNIT_1, MCPWM_TIMER_0, MCPWM_OPR_A, 1000);
-    esc_write_us(MCPWM_UNIT_1, MCPWM_TIMER_1, MCPWM_OPR_A, 1000);
-
+    // CALIBRACIÓN - Paso 2: Señal mínima (1000us)
+    ESP_LOGI(TAG, "CALIBRACIÓN: Enviando 1000us a todos los motores");
+    for (int i = 0; i < MOTOR_COUNT; i++)
+    {
+        esc_write_us(motor_cfg[i].unit, motor_cfg[i].timer, motor_cfg[i].op, 1000);
+    }
     vTaskDelay(pdMS_TO_TICKS(3000));
 
-    ESP_LOGI(TAG, "Calibración completada");
+    ESP_LOGI(TAG, "Calibración completada para todos los motores");
 }
+
 void motor_set_us(int id, int us)
 {
     if (id < 0 || id >= MOTOR_COUNT)
@@ -100,7 +124,17 @@ void motor_set_us(int id, int us)
         motor_cfg[id].timer,
         motor_cfg[id].op,
         us);
+
+    // Guardar valor actual
+    if (us < MOTOR_PWM_MIN_US)
+        us = MOTOR_PWM_MIN_US;
+    if (us > MOTOR_PWM_MAX_US)
+        us = MOTOR_PWM_MAX_US;
+
+    motor_inputs[id] = (uint16_t)us;
+    motor_vals[id] = (uint16_t)us;
 }
+
 // =========================================================
 // === Encendido, apagado y control ===
 // =========================================================
@@ -147,19 +181,35 @@ void motor_ctrl_stop_all(void)
 {
     for (uint8_t i = 1; i <= MOTOR_COUNT; i++)
         motor_set_us(i - 1, MOTOR_PWM_MIN_US);
-    ESP_LOGI(TAG, "Motores apagados");
+
+    static TickType_t last_log_time = 0;
+    const TickType_t LOG_PERIOD = pdMS_TO_TICKS(70000); // 30 segundos
+
+    if ((xTaskGetTickCount() - last_log_time) >= LOG_PERIOD)
+    {
+        ESP_LOGI(TAG, "Motores apagados");
+        last_log_time = xTaskGetTickCount();
+    }
 }
 
+void motor_get_inputs(uint16_t out[MOTOR_COUNT])
+{
+    // Copiamos los valores actuales a la salida para evitar lecturas parciales
+    for (int i = 0; i < MOTOR_COUNT; ++i)
+    {
+        out[i] = motor_inputs[i];
+    }
+}
 // =========================================================
 // ===  Control colectivo con saturación (LQR / PID) ===
 // =========================================================
-void motor_ctrl_apply_control(float tau_x, float tau_y, float tau_z, float inputThrottle)
+void motor_ctrl_apply_control(float tau_x, float tau_y, float tau_z, float effective_throttle)
 {
-    float f[MOTOR_COUNT];
-    f[0] = inputThrottle - tau_x - tau_y - tau_z;
-    f[1] = inputThrottle - tau_x + tau_y + tau_z;
-    f[2] = inputThrottle + tau_x + tau_y - tau_z;
-    f[3] = inputThrottle + tau_x - tau_y + tau_z;
+    int f[MOTOR_COUNT];
+    f[0] = effective_throttle - tau_x - tau_y - tau_z;
+    f[1] = effective_throttle - tau_x + tau_y + tau_z;
+    f[2] = effective_throttle + tau_x + tau_y - tau_z;
+    f[3] = effective_throttle + tau_x - tau_y + tau_z;
 
     const float f_min = MOTOR_PWM_MIN_US;
     const float f_max = MOTOR_PWM_MAX_US;
@@ -176,18 +226,52 @@ void motor_ctrl_apply_control(float tau_x, float tau_y, float tau_z, float input
 
     if (saturado)
     {
-        float gamma = 1.0f;
+        float max_violation = 0;
+        int worst_motor = 0;
+
         for (int i = 0; i < MOTOR_COUNT; i++)
         {
+            float violation = 0;
             if (f[i] > f_max)
-                gamma = f_max / f[i];
+                violation = f[i] - f_max;
             else if (f[i] < f_min)
-                gamma = f_min / f[i];
+                violation = f_min - f[i];
+
+            if (violation > max_violation)
+            {
+                max_violation = violation;
+                worst_motor = i;
+            }
         }
+
+        float gamma = 1.0f;
+        if (f[worst_motor] > f_max)
+            gamma = f_max / f[worst_motor];
+        else if (f[worst_motor] < f_min)
+            gamma = f_min / f[worst_motor];
+
+        // Aplicar a todos los motores
         for (int i = 0; i < MOTOR_COUNT; i++)
-            f[i] *= gamma;
+        {
+            f[i] = f[i] * gamma;
+        }
     }
 
     for (int i = 0; i < MOTOR_COUNT; i++)
+    {
+        if (f[i] < f_min)
+            f[i] = f_min;
+        if (f[i] > f_max)
+            f[i] = f_max;
+
         motor_set_us(i, (int)roundf(f[i]));
+    }
+    static int debug_count = 0;
+    if (debug_count++ % 100 == 0)
+    {
+        ESP_LOGI("MOTOR_DEBUG", "Input: Th=%.0f, T=(%.1f,%.1f,%.1f)",
+                 effective_throttle, tau_x, tau_y, tau_z);
+        ESP_LOGI("MOTOR_DEBUG", "Output: M0=%d, M1=%d, M2=%d, M3=%d",
+                 f[0], f[1], f[2], f[3]);
+    }
 }

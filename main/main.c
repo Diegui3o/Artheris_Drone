@@ -83,7 +83,7 @@ static void system_init_task(void *arg)
     ESP_LOGI(TAG, "IMU iniciado");
 
     // --- Telemetría ---
-    telemetry_start_core0("192.168.1.43", 8889, 5);
+    telemetry_start_core0("192.168.1.10", 8889, 5);
     ESP_LOGI(TAG, "Telemetry started");
 
     // --- Control task ---

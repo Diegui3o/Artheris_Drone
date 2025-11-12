@@ -10,6 +10,8 @@
 #include "filter.h"
 #include "esp_heap_caps.h"
 #include "esp_netif.h"
+#include "motor_ctrl.h"
+#include "motor_state.h"
 
 static const char *TAGT = "TEL";
 static TaskHandle_t s_tel_task = NULL;
@@ -40,7 +42,8 @@ static void telemetry_task(void *arg)
     ESP_LOGI(TAGT, "UDP listo a %s:%u", inet_ntoa(to.sin_addr), (unsigned)ntohs(to.sin_port));
 
     int64_t last_sent_ts = -1;
-    drone_mode_t last_sent_mode = -1; // para evitar enviar modo repetido
+    drone_mode_t last_sent_mode = -1;
+    uint16_t last_motor_vals[4] = {0};
 
     for (;;)
     {
@@ -49,7 +52,6 @@ static void telemetry_task(void *arg)
         {
             bool send_now = false;
 
-            // Verifica cambio en timestamp (nueva lectura de actitud)
             if (a.t_us != last_sent_ts)
             {
                 last_sent_ts = a.t_us;
@@ -64,12 +66,32 @@ static void telemetry_task(void *arg)
                 send_now = true;
             }
 
+            bool motors_changed = false;
+            for (int i = 0; i < 4; i++)
+            {
+                if (motor_vals[i] != last_motor_vals[i])
+                {
+                    motors_changed = true;
+                    last_motor_vals[i] = motor_vals[i];
+                }
+            }
+
+            if (motors_changed)
+            {
+                send_now = true;
+            }
+
             if (send_now)
             {
                 char json[128];
                 int n = snprintf(json, sizeof(json),
-                                 "{\"AngleRoll\":%.3f, \"AnglePitch\":%.3f, \"modoActual\":%d}\n",
-                                 a.roll_deg, a.pitch_deg, (int)current_mode);
+                                 "{\"AngleRoll\":%.3f, \"AnglePitch\":%.3f, \"modoActual\":%d, "
+                                 "\"MotorInput1\":%u, \"MotorInput2\":%u, \"MotorInput3\":%u, \"MotorInput4\":%u}\n",
+                                 a.roll_deg, a.pitch_deg, (int)current_mode,
+                                 (unsigned)motor_vals[0],
+                                 (unsigned)motor_vals[1],
+                                 (unsigned)motor_vals[2],
+                                 (unsigned)motor_vals[3]);
                 if (n > 0)
                 {
                     sendto(sock, json, n, 0, (struct sockaddr *)&to, sizeof(to));

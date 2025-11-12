@@ -27,7 +27,8 @@
     "esp_event.h": "c",
     "gpio.h": "c",
     "freertos.h": "c",
-    "math.h": "c"
+    "math.h": "c",
+    "ledc.h": "c"
   },
   "idf.flashType": "UART"
 }
