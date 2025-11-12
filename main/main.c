@@ -83,11 +83,11 @@ static void system_init_task(void *arg)
     ESP_LOGI(TAG, "IMU iniciado");
 
     // --- Telemetría ---
-    telemetry_start_core0("192.168.1.10", 8889, 5);
+    telemetry_start_core0("192.168.1.10", 8889, 3);
     ESP_LOGI(TAG, "Telemetry started");
 
     // --- Control task ---
-    xTaskCreatePinnedToCore(control_task, "control", 4096, NULL, 20, NULL, 1);
+    xTaskCreatePinnedToCore(control_task, "control", 4096, NULL, 15, NULL, 1);
     ESP_LOGI(TAG, "Control task creada");
 
     ESP_LOGI(TAG, "==== Sistema iniciado correctamente ====");
@@ -100,10 +100,9 @@ void app_main(void)
 {
     esp_log_level_set("*", ESP_LOG_INFO);
     ESP_LOGI(TAG, "==== Inicio de app_main ====");
-    // Creamos la task de inicialización con stack grande (8k) en core 1
+
     xTaskCreatePinnedToCore(system_init_task, "sys_init", 8192, NULL, 5, NULL, 1);
 
-    // Opcional: mantener app_main viva con un loop ligero
     while (1)
     {
         vTaskDelay(pdMS_TO_TICKS(10000));

@@ -16,14 +16,16 @@
 static const char *TAGT = "TEL";
 static TaskHandle_t s_tel_task = NULL;
 
+typedef struct
+{
+    uint32_t ip;
+    uint16_t port;
+} dest_t;
+
 static void telemetry_task(void *arg)
 {
-    struct Dest
-    {
-        uint32_t ip;
-        uint16_t port;
-    };
-    struct Dest local = *(struct Dest *)arg;
+
+    dest_t local = *(dest_t *)arg;
     heap_caps_free(arg);
 
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
@@ -58,7 +60,6 @@ static void telemetry_task(void *arg)
                 send_now = true;
             }
 
-            // Verifica cambio de modo
             drone_mode_t current_mode = getMode();
             if (current_mode != last_sent_mode)
             {
@@ -83,7 +84,7 @@ static void telemetry_task(void *arg)
 
             if (send_now)
             {
-                char json[128];
+                char json[256];
                 int n = snprintf(json, sizeof(json),
                                  "{\"AngleRoll\":%.3f, \"AnglePitch\":%.3f, \"modoActual\":%d, "
                                  "\"MotorInput1\":%u, \"MotorInput2\":%u, \"MotorInput3\":%u, \"MotorInput4\":%u}\n",
@@ -92,14 +93,19 @@ static void telemetry_task(void *arg)
                                  (unsigned)motor_vals[1],
                                  (unsigned)motor_vals[2],
                                  (unsigned)motor_vals[3]);
-                if (n > 0)
+
+                if (n > 0 && n < sizeof(json))
                 {
-                    sendto(sock, json, n, 0, (struct sockaddr *)&to, sizeof(to));
+                    int sent = sendto(sock, json, n, 0, (struct sockaddr *)&to, sizeof(to));
+                }
+                else
+                {
+                    ESP_LOGE("TEL_SEND", "❌ JSON too long: %d/%d", n, sizeof(json));
                 }
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(10)); // 100 Hz de tasa de envío
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -108,12 +114,10 @@ bool telemetry_start_core0(const char *remote_ip, uint16_t remote_port, int prio
     if (s_tel_task)
         return true;
 
-    struct Dest
-    {
-        uint32_t ip;
-        uint16_t port;
-    };
-    struct Dest *d = (struct Dest *)heap_caps_malloc(sizeof(struct Dest), MALLOC_CAP_DEFAULT);
+    if (priority <= 0)
+        priority = 3;
+
+    dest_t *d = heap_caps_malloc(sizeof(*d), MALLOC_CAP_DEFAULT);
     if (!d)
         return false;
 
@@ -123,5 +127,10 @@ bool telemetry_start_core0(const char *remote_ip, uint16_t remote_port, int prio
     BaseType_t ok = xTaskCreatePinnedToCore(
         telemetry_task, "telemetry", 4096, d, priority, &s_tel_task, 0 /* core 0 */);
 
-    return ok == pdPASS;
+    if (ok != pdPASS)
+    {
+        heap_caps_free(d);
+        return false;
+    }
+    return true;
 }

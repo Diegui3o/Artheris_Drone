@@ -1,9 +1,15 @@
-#ifndef TELEMETRY_H
-#define TELEMETRY_H
 
-#include <stdbool.h>
 #include <stdint.h>
+#include <stdbool.h>
 
-bool telemetry_start_core0(const char *remote_ip, uint16_t remote_port, int priority);
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
-#endif // TELEMETRY_H
+    bool telemetry_start_core0(const char *remote_ip, uint16_t remote_port, int priority);
+    bool telemetry_start_core1(const char *remote_ip, uint16_t remote_port, int priority);
+
+#ifdef __cplusplus
+}
+#endif

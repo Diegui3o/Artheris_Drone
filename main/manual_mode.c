@@ -92,6 +92,8 @@ static void IRAM_ATTR rc_gpio_isr(void *arg)
 
 static void rc_gpio_init(void)
 {
+    static bool isr_installed = false;
+
     gpio_config_t io = {
         .pin_bit_mask = 0,
         .mode = GPIO_MODE_INPUT,
@@ -99,13 +101,47 @@ static void rc_gpio_init(void)
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_ANYEDGE,
     };
-    for (int i = 0; i < 6; i++)
-        io.pin_bit_mask |= (1ULL << ch_gpio[i]);
-    ESP_ERROR_CHECK(gpio_config(&io));
-    ESP_ERROR_CHECK(gpio_install_isr_service(0));
+
     for (int i = 0; i < 6; i++)
     {
-        ESP_ERROR_CHECK(gpio_isr_handler_add(ch_gpio[i], rc_gpio_isr, (void *)(uint32_t)ch_gpio[i]));
+        io.pin_bit_mask |= (1ULL << ch_gpio[i]);
+    }
+
+    ESP_ERROR_CHECK(gpio_config(&io));
+
+    // --- Instalar ISR service sólo una vez ---
+    if (!isr_installed)
+    {
+        esp_err_t err = gpio_install_isr_service(0);
+        if (err == ESP_OK)
+        {
+            isr_installed = true;
+            ESP_LOGI("RC", "GPIO ISR service instalado correctamente");
+        }
+        else if (err == ESP_ERR_INVALID_STATE)
+        {
+            // Ya estaba instalado, lo ignoramos con un warning
+            ESP_LOGW("RC", "GPIO ISR service ya estaba instalado");
+            isr_installed = true;
+        }
+        else
+        {
+            ESP_LOGE("RC", "Error al instalar ISR service: %s", esp_err_to_name(err));
+        }
+    }
+
+    // --- Registrar los handlers por canal ---
+    for (int i = 0; i < 6; i++)
+    {
+        esp_err_t err = gpio_isr_handler_add(ch_gpio[i], rc_gpio_isr, (void *)(uint32_t)ch_gpio[i]);
+        if (err == ESP_OK)
+        {
+            ESP_LOGI("RC", "Handler ISR añadido para GPIO %d", ch_gpio[i]);
+        }
+        else if (err == ESP_ERR_INVALID_ARG)
+        {
+            ESP_LOGE("RC", "GPIO %d inválido o ya tiene handler", ch_gpio[i]);
+        }
     }
 }
 
@@ -297,24 +333,35 @@ void manual_mode_start(void)
     rc_gpio_init();
     ESP_LOGI(TAG_MAN, "GPIO RC initialized");
 
-    // Crear timer de 1kHz
     if (!s_tick_1khz)
     {
         const esp_timer_create_args_t args = {
             .callback = &tick_1khz_cb,
             .arg = NULL,
-            .dispatch_method = ESP_TIMER_TASK,
+            .dispatch_method = ESP_TIMER_TASK, // timer task corre en core 0 (ok)
             .name = "man_1khz"};
         ESP_ERROR_CHECK(esp_timer_create(&args, &s_tick_1khz));
     }
 
-    // Crear tarea
-    UBaseType_t prio = uxTaskPriorityGet(NULL);
-    xTaskCreatePinnedToCore(manual_loop_task, "manual_loop", 4096, NULL, prio + 3, &s_manual_task, 0);
+    const UBaseType_t prio_manual = configMAX_PRIORITIES - 2;
 
-    // Iniciar temporizador
+    BaseType_t ok = xTaskCreatePinnedToCore(
+        manual_loop_task,
+        "manual_loop",
+        4096,
+        NULL,
+        prio_manual, // Ej: 23 (más alta que control_task)
+        &s_manual_task,
+        1 /* core 1 */
+    );
+    if (ok != pdPASS)
+    {
+        ESP_LOGE(TAG_MAN, "No se pudo crear manual_loop_task");
+        return;
+    }
+
     ESP_ERROR_CHECK(esp_timer_start_periodic(s_tick_1khz, 1000));
-    ESP_LOGI(TAG_MAN, "Manual mode started");
+    ESP_LOGI(TAG_MAN, "Manual mode started (core 1, prio %u)", (unsigned)prio_manual);
 }
 
 void manual_mode_stop(void)
@@ -322,6 +369,15 @@ void manual_mode_stop(void)
     if (s_tick_1khz)
         esp_timer_stop(s_tick_1khz);
 
+    // Detener motores
     motor_ctrl_stop_all();
+
+    // Eliminar handlers ISR de los canales RC
+    for (int i = 0; i < 6; i++)
+    {
+        gpio_isr_handler_remove(ch_gpio[i]);
+    }
+    ESP_LOGI(TAG_MAN, "Handlers ISR RC liberados");
+
     ESP_LOGI(TAG_MAN, "Manual mode stopped");
 }

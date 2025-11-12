@@ -83,6 +83,8 @@ static void mode_control_task(void *pvParameters)
 
 void mode_control_start_core1(int priority)
 {
-    // Deja este task en CORE 1 (coordina cambios de modo)
-    xTaskCreatePinnedToCore(mode_control_task, "mode_ctrl", 4096, NULL, priority, NULL, 1);
+
+    xTaskCreatePinnedToCore(mode_control_task, "mode_ctrl", 4096, NULL,
+                            priority,
+                            NULL, 1);
 }

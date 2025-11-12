@@ -132,7 +132,16 @@ void motor_set_us(int id, int us)
         us = MOTOR_PWM_MAX_US;
 
     motor_inputs[id] = (uint16_t)us;
+
+    // ✅ DEBUG CRÍTICO: Verificar actualización de motor_vals
+    uint16_t old_val = motor_vals[id];
     motor_vals[id] = (uint16_t)us;
+
+    static int debug_count = 0;
+    if (debug_count++ % 30 == 0)
+    {
+        ESP_LOGI("MOTOR_VALS_UPDATE", "Motor%d: %d -> %d us", id, old_val, motor_vals[id]);
+    }
 }
 
 // =========================================================
@@ -265,13 +274,5 @@ void motor_ctrl_apply_control(float tau_x, float tau_y, float tau_z, float effec
             f[i] = f_max;
 
         motor_set_us(i, (int)roundf(f[i]));
-    }
-    static int debug_count = 0;
-    if (debug_count++ % 100 == 0)
-    {
-        ESP_LOGI("MOTOR_DEBUG", "Input: Th=%.0f, T=(%.1f,%.1f,%.1f)",
-                 effective_throttle, tau_x, tau_y, tau_z);
-        ESP_LOGI("MOTOR_DEBUG", "Output: M0=%d, M1=%d, M2=%d, M3=%d",
-                 f[0], f[1], f[2], f[3]);
     }
 }
