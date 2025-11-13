@@ -28,7 +28,8 @@
     "gpio.h": "c",
     "freertos.h": "c",
     "math.h": "c",
-    "ledc.h": "c"
+    "ledc.h": "c",
+    "portmacro.h": "c"
   },
   "idf.flashType": "UART"
 }

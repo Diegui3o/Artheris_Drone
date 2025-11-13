@@ -6,6 +6,7 @@
 #include "esp_attr.h"
 #include <math.h>
 #include <string.h>
+#include "led.h"
 
 // ===== Dispositivo =====
 static uint8_t s_addr = 0x68;
@@ -155,7 +156,7 @@ bool imu_init(int i2c_port, int sda_gpio, int scl_gpio, uint32_t clk_hz)
     if (!found)
     {
         // ESP_LOGE("IMU", "No responde 0x68 ni 0x69");
-        led_set_color(255, 0, 0);
+        rgb_led_set(255, 0, 0);
         return false;
     }
 
@@ -174,7 +175,7 @@ bool imu_init(int i2c_port, int sda_gpio, int scl_gpio, uint32_t clk_hz)
     if (err != ESP_OK)
     {
         // ESP_LOGE("IMU", "No pude escribir PWR_MGMT_1 (wake). err=0x%x", err);
-        led_set_color(255, 0, 0);
+        rgb_led_set(255, 0, 0);
         return false;
     }
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -229,7 +230,7 @@ static void imu_task(void *arg)
         // === ACC (X,Y,Z)
         if (i2c_read_multi(REG_ACCEL_XOUT_H, acc_raw, sizeof(acc_raw)) != ESP_OK)
         {
-            led_set_color(255, 0, 0);
+            rgb_led_set(255, 0, 0);
             continue;
         }
         int16_t AccXLSB = (int16_t)((acc_raw[0] << 8) | acc_raw[1]);
@@ -239,7 +240,7 @@ static void imu_task(void *arg)
         // === GYRO (X,Y,Z)
         if (i2c_read_multi(REG_GYRO_XOUT_H, gyr_raw, sizeof(gyr_raw)) != ESP_OK)
         {
-            led_set_color(255, 0, 0);
+            rgb_led_set(255, 0, 0);
             continue;
         }
         int16_t GyroX = (int16_t)((gyr_raw[0] << 8) | gyr_raw[1]);
@@ -297,7 +298,7 @@ bool imu_start_1khz(int core, int priority)
 
     if (ok != pdPASS)
     {
-        led_set_color(255, 0, 0);
+        rgb_led_set(255, 0, 0);
         return false;
     }
     return true;

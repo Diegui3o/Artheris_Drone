@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "manual_mode.h"
+#include "led.h"
 
 static const char *TAG = "MODE_CTRL";
 

@@ -7,6 +7,7 @@
 #include "freertos/event_groups.h"
 #include "esp_log.h"
 #include <string.h>
+#include "led.h"
 
 static const char *TAG = "WIFI";
 

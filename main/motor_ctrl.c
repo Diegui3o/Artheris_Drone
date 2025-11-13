@@ -7,6 +7,7 @@
 #include <math.h>
 #include "motor_ctrl.h"
 #include "motor_state.h"
+#include "led.h"
 
 #define TAG "ESC"
 
@@ -135,15 +136,10 @@ void motor_set_us(int id, int us)
 
     motor_inputs[id] = (uint16_t)us;
 
-    // ✅ DEBUG CRÍTICO: Verificar actualización de motor_vals
     uint16_t old_val = motor_vals[id];
     motor_vals[id] = (uint16_t)us;
 
     static int debug_count = 0;
-    if (debug_count++ % 30 == 0)
-    {
-        ESP_LOGI("MOTOR_VALS_UPDATE", "Motor%d: %d -> %d us", id, old_val, motor_vals[id]);
-    }
     if (id < 0 || id >= MOTOR_COUNT)
     {
         ESP_LOGE(TAG, "motor_set_us: id inválido %d", id);

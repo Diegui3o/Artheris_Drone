@@ -63,16 +63,8 @@ static void system_init_task(void *arg)
         return;
     }
 
-    ESP_LOGI(TAG, "Esperando 500 ms para estabilizar red y recursos");
-    vTaskDelay(pdMS_TO_TICKS(500));
-
-    mode_control_start_core1(10);
-    rgb_led_set(255, 255, 255);
-    motor_ctrl_init();
-
-    // --- CMD LED (server UDP non-blocking en core 0) ---
-    bool started = cmd_start_core0(8888, 5);
-    ESP_LOGI(TAG, "cmd_start_core0 -> %s", started ? "OK" : "FAIL");
+    ESP_LOGI(TAG, "Esperando 700 ms para estabilizar red y recursos");
+    vTaskDelay(pdMS_TO_TICKS(700));
 
     // --- IMU ---
     ESP_LOGI(TAG, "Inicializando IMU...");
@@ -82,6 +74,22 @@ static void system_init_task(void *arg)
     imu_start_1khz(1, 18);
     attitude_start(1, 19, 0.001f, 0.003f, 0.03f);
     ESP_LOGI(TAG, "IMU iniciado");
+
+    rgb_led_set(46, 239, 120);
+
+    ESP_LOGI(TAG, "Esperando 200 ms");
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    mode_control_start_core1(10);
+    motor_ctrl_init();
+
+    ESP_LOGI(TAG, "Esperando 100 ms");
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // --- CMD LED (server UDP non-blocking en core 0) ---
+    bool started = cmd_start_core0(8888, 5);
+    ESP_LOGI(TAG, "cmd_start_core0 -> %s", started ? "OK" : "FAIL");
+    rgb_led_set(255, 255, 255);
 
     // --- Telemetría ---
     telemetry_start_core0("192.168.1.10", 8889, 3);

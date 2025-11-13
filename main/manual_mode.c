@@ -13,6 +13,7 @@
 #include "filter.h"
 #include "motor_ctrl.h"
 #include <stdint.h>
+#include "led.h"
 
 // --- Pines RC (entradas del receptor) ---
 static const int channel_1_pin = 4;
