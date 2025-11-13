@@ -8,7 +8,7 @@
 #include <string.h>
 
 // ===== Dispositivo =====
-static uint8_t s_addr = 0x68; // se decide en runtime (0x68 u 0x69)
+static uint8_t s_addr = 0x68;
 #define REG_WHO_AM_I 0x75
 #define REG_PWR_MGMT_1 0x6B
 #define REG_SMPLRT_DIV 0x19
@@ -18,7 +18,6 @@ static uint8_t s_addr = 0x68; // se decide en runtime (0x68 u 0x69)
 #define REG_ACCEL_XOUT_H 0x3B
 #define REG_GYRO_XOUT_H 0x43
 
-// ===== RANGOS (misma config que tu Arduino) =====
 // ACCEL_CONFIG = 0x10 -> ±8 g  → 4096 LSB/g
 // GYRO_CONFIG  = 0x08 -> ±500°/s → 65.5 LSB/(°/s)
 #define ACC_LSB_PER_G 4096.0f
@@ -28,11 +27,13 @@ static uint8_t s_addr = 0x68; // se decide en runtime (0x68 u 0x69)
 // ===== I2C =====
 static int s_i2c_port = I2C_NUM_0;
 
-// ===== Offsets (LSB), como en tu Arduino =====
-static volatile int16_t s_ax_off = 0, s_ay_off = 0, s_az_off = 0;
-static volatile int16_t s_gx_off = 0, s_gy_off = 0, s_gz_off = 0;
+static volatile int16_t s_ax_off_lsb = 0;
+static volatile int16_t s_ay_off_lsb = 0;
+static volatile int16_t s_az_off_lsb = 0;
+static volatile int16_t s_gx_off_lsb = 0;
+static volatile int16_t s_gy_off_lsb = 0;
+static volatile int16_t s_gz_off_lsb = 0;
 
-// ===== Seqlock para compartir entre núcleos =====
 typedef struct
 {
     volatile uint32_t seq;
@@ -72,32 +73,54 @@ bool imu_get_latest(ImuSample *out)
 static esp_err_t i2c_write_reg(uint8_t reg, uint8_t val)
 {
     uint8_t data[2] = {reg, val};
-    // sube el timeout a 50 ms para inicio
+    // timeout 50 ms para inicio
     return i2c_master_write_to_device(s_i2c_port, s_addr, data, 2, pdMS_TO_TICKS(50));
 }
 
 static esp_err_t i2c_read_multi(uint8_t reg, uint8_t *buf, size_t len)
 {
-    return i2c_master_write_read_device(s_i2c_port, s_addr, &reg, 1, buf, len, pdMS_TO_TICKS(50));
+    return i2c_master_write_read_device(s_i2c_port, s_addr,
+                                        &reg, 1, buf, len,
+                                        pdMS_TO_TICKS(50));
 }
 
 static esp_err_t i2c_read_u8(uint8_t reg, uint8_t *val)
 {
     return i2c_read_multi(reg, val, 1);
 }
-
-// --- offsets setters (igual semántica que tus variables globales) ---
-void imu_set_acc_offsets(int16_t ax_lsboff, int16_t ay_lsboff, int16_t az_lsboff)
+void imu_set_offsets_lsb(int16_t ax_off, int16_t ay_off, int16_t az_off,
+                         int16_t gx_off, int16_t gy_off, int16_t gz_off)
 {
-    s_ax_off = ax_lsboff;
-    s_ay_off = ay_lsboff;
-    s_az_off = az_lsboff;
+    s_ax_off_lsb = ax_off;
+    s_ay_off_lsb = ay_off;
+    s_az_off_lsb = az_off;
+    s_gx_off_lsb = gx_off;
+    s_gy_off_lsb = gy_off;
+    s_gz_off_lsb = gz_off;
 }
-void imu_set_gyro_offsets(int16_t gx_lsboff, int16_t gy_lsboff, int16_t gz_lsboff)
+
+// Lectura cruda en LSB, sin aplicar offsets ni escalas
+bool imu_read_raw_lsb(int16_t *ax, int16_t *ay, int16_t *az,
+                      int16_t *gx, int16_t *gy, int16_t *gz)
 {
-    s_gx_off = gx_lsboff;
-    s_gy_off = gy_lsboff;
-    s_gz_off = gz_lsboff;
+    uint8_t acc_raw[6];
+    uint8_t gyr_raw[6];
+
+    if (i2c_read_multi(REG_ACCEL_XOUT_H, acc_raw, sizeof(acc_raw)) != ESP_OK)
+        return false;
+
+    if (i2c_read_multi(REG_GYRO_XOUT_H, gyr_raw, sizeof(gyr_raw)) != ESP_OK)
+        return false;
+
+    *ax = (int16_t)((acc_raw[0] << 8) | acc_raw[1]);
+    *ay = (int16_t)((acc_raw[2] << 8) | acc_raw[3]);
+    *az = (int16_t)((acc_raw[4] << 8) | acc_raw[5]);
+
+    *gx = (int16_t)((gyr_raw[0] << 8) | gyr_raw[1]);
+    *gy = (int16_t)((gyr_raw[2] << 8) | gyr_raw[3]);
+    *gz = (int16_t)((gyr_raw[4] << 8) | gyr_raw[5]);
+
+    return true;
 }
 
 // --- init con la MISMA configuración que tu Arduino ---
@@ -131,13 +154,15 @@ bool imu_init(int i2c_port, int sda_gpio, int scl_gpio, uint32_t clk_hz)
     }
     if (!found)
     {
-        // Si quieres más debug, deja logs aquí
         // ESP_LOGE("IMU", "No responde 0x68 ni 0x69");
+        led_set_color(255, 0, 0);
         return false;
     }
+
+    // Reset y wake
     (void)i2c_write_reg(REG_PWR_MGMT_1, 0x80);
     vTaskDelay(pdMS_TO_TICKS(100));
-    // Wake con reintentos
+
     esp_err_t err = ESP_FAIL;
     for (int tries = 0; tries < 3; ++tries)
     {
@@ -149,6 +174,7 @@ bool imu_init(int i2c_port, int sda_gpio, int scl_gpio, uint32_t clk_hz)
     if (err != ESP_OK)
     {
         // ESP_LOGE("IMU", "No pude escribir PWR_MGMT_1 (wake). err=0x%x", err);
+        led_set_color(255, 0, 0);
         return false;
     }
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -200,31 +226,33 @@ static void imu_task(void *arg)
         // Espera tick 1 ms
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        // === ACC (X,Y,Z) === (igual que tu sketch)
+        // === ACC (X,Y,Z)
         if (i2c_read_multi(REG_ACCEL_XOUT_H, acc_raw, sizeof(acc_raw)) != ESP_OK)
         {
+            led_set_color(255, 0, 0);
             continue;
         }
         int16_t AccXLSB = (int16_t)((acc_raw[0] << 8) | acc_raw[1]);
         int16_t AccYLSB = (int16_t)((acc_raw[2] << 8) | acc_raw[3]);
         int16_t AccZLSB = (int16_t)((acc_raw[4] << 8) | acc_raw[5]);
 
-        // === GYRO (X,Y,Z) === (igual que tu sketch)
+        // === GYRO (X,Y,Z)
         if (i2c_read_multi(REG_GYRO_XOUT_H, gyr_raw, sizeof(gyr_raw)) != ESP_OK)
         {
+            led_set_color(255, 0, 0);
             continue;
         }
         int16_t GyroX = (int16_t)((gyr_raw[0] << 8) | gyr_raw[1]);
         int16_t GyroY = (int16_t)((gyr_raw[2] << 8) | gyr_raw[3]);
         int16_t GyroZ = (int16_t)((gyr_raw[4] << 8) | gyr_raw[5]);
 
-        // === offsets (misma semántica que tu Arduino) ===
-        AccXLSB += s_ax_off;
-        AccYLSB += s_ay_off;
-        AccZLSB += s_az_off;
-        GyroX += s_gx_off;
-        GyroY += s_gy_off;
-        GyroZ += s_gz_off;
+        AccXLSB += s_ax_off_lsb;
+        AccYLSB += s_ay_off_lsb;
+        AccZLSB += s_az_off_lsb;
+
+        GyroX += s_gx_off_lsb;
+        GyroY += s_gy_off_lsb;
+        GyroZ += s_gz_off_lsb;
 
         // === conversiones idénticas ===
         ImuSample s;
@@ -245,14 +273,12 @@ static void imu_task(void *arg)
         s.gyro_y_rads = s.gyro_y_dps * DEG2RAD;
         s.gyro_z_rads = s.gyro_z_dps * DEG2RAD;
 
-        // Ángulos por acelerómetro (deg) — mismas fórmulas
-        // AngleRoll_est = atan(AccY / sqrt(AccX^2 + AccZ^2)) * 57.29
-        // AnglePitch_est = -atan(AccX / sqrt(AccY^2 + AccZ^2)) * 57.29
-        const float kRAD2DEG = 57.29577951308232f;
+        const float kRAD2DEG = 57.29577951308232f; // 180/PI
         float ax = s.acc_x_g, ay = s.acc_y_g, az = s.acc_z_g;
 
-        s.roll_acc_deg = atanf(ay / sqrtf(ax * ax + az * az)) * kRAD2DEG;
-        s.pitch_acc_deg = -atanf(ax / sqrtf(ay * ay + az * az)) * kRAD2DEG;
+        // Mismo cálculo que Arduino:
+        s.roll_acc_deg = atan2f(ay, sqrtf(ax * ax + az * az)) * kRAD2DEG;
+        s.pitch_acc_deg = -atan2f(ax, sqrtf(ay * ay + az * az)) * kRAD2DEG;
 
         // Publicar (lock-free)
         seqlock_write_begin(&s_shared.seq);
@@ -265,5 +291,14 @@ bool imu_start_1khz(int core, int priority)
 {
     if (s_imu_task)
         return true;
-    return xTaskCreatePinnedToCore(imu_task, "imu_task", 4096, NULL, priority, &s_imu_task, core) == pdPASS;
+
+    BaseType_t ok = xTaskCreatePinnedToCore(
+        imu_task, "imu_task", 4096, NULL, priority, &s_imu_task, core);
+
+    if (ok != pdPASS)
+    {
+        led_set_color(255, 0, 0);
+        return false;
+    }
+    return true;
 }

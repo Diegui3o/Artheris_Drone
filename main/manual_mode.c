@@ -172,7 +172,6 @@ void manual_loop_task(void *pvParameters)
     static bool motors_armed = false;
     static bool was_low_throttle = false;
     static int64_t prev_us = 0;
-    static float yaw_deg_int = 0.0f;
     static int debug_counter = 0;
 
     ESP_LOGI(TAG_MAN, "Manual loop task started");
@@ -215,7 +214,6 @@ void manual_loop_task(void *pvParameters)
             motors_armed = true;
             was_low_throttle = false;
             integral_phi = integral_theta = integral_psi = 0;
-            yaw_deg_int = 0;
             ESP_LOGI(TAG_MAN, "Motores armados! Throttle=%d", InputThrottle);
         }
 
@@ -285,13 +283,7 @@ void manual_loop_task(void *pvParameters)
             float roll_rad = a.roll_deg * (float)M_PI / 180.0f;
             float pitch_rad = a.pitch_deg * (float)M_PI / 180.0f;
 
-            // Yaw: integra gyro z
-            static float yaw_deg_int = 0.0f;
-            yaw_deg_int += s.gyro_z_dps * dt;
-            if (yaw_deg_int > 180.f)
-                yaw_deg_int -= 360.f;
-            if (yaw_deg_int < -180.f)
-                yaw_deg_int += 360.f;
+            float yaw_deg_int = 0;
 
             float yaw_rad = yaw_deg_int * (float)M_PI / 180.0f;
             float gyroRoll_rad = s.gyro_x_dps * (float)M_PI / 180.0f;

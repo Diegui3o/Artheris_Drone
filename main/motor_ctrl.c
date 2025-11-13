@@ -39,6 +39,7 @@ void pwm_init_pin(const motor_cfg_t *cfg)
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "Error inicializando GPIO: %s", esp_err_to_name(ret));
+        rgb_led_set(128, 0, 255);
         return;
     }
 
@@ -59,6 +60,7 @@ void pwm_init_pin(const motor_cfg_t *cfg)
         if (init_ret != ESP_OK)
         {
             ESP_LOGE(TAG, "Error inicializando PWM: %s", esp_err_to_name(init_ret));
+            rgb_led_set(128, 0, 255);
         }
         else
         {
@@ -141,6 +143,12 @@ void motor_set_us(int id, int us)
     if (debug_count++ % 30 == 0)
     {
         ESP_LOGI("MOTOR_VALS_UPDATE", "Motor%d: %d -> %d us", id, old_val, motor_vals[id]);
+    }
+    if (id < 0 || id >= MOTOR_COUNT)
+    {
+        ESP_LOGE(TAG, "motor_set_us: id inválido %d", id);
+        rgb_led_set(128, 0, 255);
+        return;
     }
 }
 

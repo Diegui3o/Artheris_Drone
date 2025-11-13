@@ -8,9 +8,10 @@ extern "C" {
 #endif
 
 typedef struct {
-    int64_t t_us;    // timestamp en microsegundos
-    float   roll_deg;
-    float   pitch_deg;
+    int64_t t_us;
+    float roll_deg;
+    float pitch_deg;
+    float yaw_deg;
 } AttitudeSample;
 
 /**

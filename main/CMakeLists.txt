@@ -13,6 +13,7 @@ set(srcs
     "cmd_motor.c"
     "manual_mode.c"
     "motor_state.c"
+    "imu_calib.c"
 )
 
 idf_component_register(

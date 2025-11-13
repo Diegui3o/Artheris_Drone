@@ -36,6 +36,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
     else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED)
     {
         ESP_LOGW(TAG, "STA disconnected");
+        rgb_led_set(255, 0, 128);
         xEventGroupClearBits(s_ev, BIT_CONNECTED | BIT_GOT_IP);
 
         if (s_retry_count < s_retry_max)
@@ -49,6 +50,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
         else
         {
             ESP_LOGE(TAG, "Máximo de reintentos alcanzado");
+            rgb_led_set(255, 0, 128);
         }
     }
     else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP)
@@ -172,6 +174,9 @@ esp_err_t wifi_sta_start(const wifi_sta_cfg_t *cfg)
     if (!(bits & BIT_CONNECTED))
     {
         ESP_LOGW(TAG, "Timeout esperando asociación (%ums)", tmo_ms);
+
+        rgb_led_set(255, 0, 128);
+
         return ESP_ERR_TIMEOUT;
     }
     ESP_LOGI(TAG, "Conectado al AP");

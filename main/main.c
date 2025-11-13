@@ -17,6 +17,7 @@
 #include "mode_control.h"
 #include "motor_ctrl.h"
 #include "cmd_motor.h"
+#include "imu_calib.h"
 
 #define I2C_PORT I2C_NUM_0
 #define I2C_SDA 8
@@ -28,6 +29,13 @@ static void system_init_task(void *arg)
 {
     ESP_LOGI(TAG, "system_init_task: start (core=%d)", xPortGetCoreID());
 
+    // --- LEDs ---
+    ESP_LOGI(TAG, "Inicializando LEDs...");
+    leds_init();
+    rgb_led_init();
+    rgb_led_set(255, 255, 0);
+    ESP_LOGI(TAG, "LEDs inicializados");
+
     // --- WiFi ---
     wifi_sta_cfg_t w = {
         .ssid = "FAMILIAMYM",
@@ -38,6 +46,7 @@ static void system_init_task(void *arg)
         .connect_timeout_ms = 15000,
         .max_retries = 5,
     };
+    rgb_led_set(0, 255, 0);
 
     int64_t t0 = esp_timer_get_time();
     esp_err_t err = wifi_sta_start(&w);
@@ -49,6 +58,7 @@ static void system_init_task(void *arg)
     if (err != ESP_OK || !wifi_sta_is_up())
     {
         ESP_LOGE(TAG, "ERROR: WiFi no listo, abortando inicialización");
+        rgb_led_set(255, 0, 128);
         vTaskDelete(NULL);
         return;
     }
@@ -56,17 +66,8 @@ static void system_init_task(void *arg)
     ESP_LOGI(TAG, "Esperando 500 ms para estabilizar red y recursos");
     vTaskDelay(pdMS_TO_TICKS(500));
 
-    // --- LEDs ---
-    ESP_LOGI(TAG, "Inicializando LEDs...");
-    // Inicializa pines digitales y el LED RGB integrado
-    leds_init();
-    rgb_led_init();
-    // Por defecto empieza en blanco
-    rgb_led_set(255, 255, 255);
-    ESP_LOGI(TAG, "LEDs inicializados");
-
     mode_control_start_core1(10);
-
+    rgb_led_set(255, 255, 255);
     motor_ctrl_init();
 
     // --- CMD LED (server UDP non-blocking en core 0) ---
@@ -76,8 +77,8 @@ static void system_init_task(void *arg)
     // --- IMU ---
     ESP_LOGI(TAG, "Inicializando IMU...");
     imu_init(I2C_PORT, I2C_SDA, I2C_SCL, 400000);
-    imu_set_acc_offsets(0, 0, 0);
-    imu_set_gyro_offsets(0, 0, 0);
+    rgb_led_set(0, 255, 255);
+    imu_calibrate_blocking();
     imu_start_1khz(1, 18);
     attitude_start(1, 19, 0.001f, 0.003f, 0.03f);
     ESP_LOGI(TAG, "IMU iniciado");

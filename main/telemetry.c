@@ -12,6 +12,7 @@
 #include "esp_netif.h"
 #include "motor_ctrl.h"
 #include "motor_state.h"
+#include "imu.h"
 
 static const char *TAGT = "TEL";
 static TaskHandle_t s_tel_task = NULL;
@@ -81,26 +82,73 @@ static void telemetry_task(void *arg)
             {
                 send_now = true;
             }
-
             if (send_now)
             {
-                char json[256];
+                ImuSample s;
+                if (!imu_get_latest(&s))
+                {
+                    vTaskDelay(pdMS_TO_TICKS(10));
+                    continue;
+                }
+
+                char json[384];
                 int n = snprintf(json, sizeof(json),
-                                 "{\"AngleRoll\":%.3f, \"AnglePitch\":%.3f, \"modoActual\":%d, "
-                                 "\"MotorInput1\":%u, \"MotorInput2\":%u, \"MotorInput3\":%u, \"MotorInput4\":%u}\n",
-                                 a.roll_deg, a.pitch_deg, (int)current_mode,
+                                 "{"
+                                 "\"AngleRoll\":%.3f,"
+                                 "\"AnglePitch\":%.3f,"
+
+                                 "\"AngleRoll_est\":%.3f,"
+                                 "\"AnglePitch_est\":%.3f,"
+                                 "\"AngleYaw\":%.3f,"
+
+                                 "\"gyroRateRoll\":%.3f,"
+                                 "\"gyroRatePitch\":%.3f,"
+                                 "\"RateYaw\":%.3f,"
+
+                                 "\"AccX\":%.3f,"
+                                 "\"AccY\":%.3f,"
+                                 "\"AccZ\":%.3f,"
+
+                                 "\"modoActual\":%d,"
+                                 "\"MotorInput1\":%u,"
+                                 "\"MotorInput2\":%u,"
+                                 "\"MotorInput3\":%u,"
+                                 "\"MotorInput4\":%u"
+                                 "}\n",
+                                 // filtrados
+                                 a.roll_deg,
+                                 a.pitch_deg,
+
+                                 // “no filtrados” (IMU)
+                                 s.roll_acc_deg,
+                                 s.pitch_acc_deg,
+
+                                 // Yaw filtrado
+                                 a.yaw_deg,
+
+                                 // Gyros
+                                 s.gyro_x_dps,
+                                 s.gyro_y_dps,
+                                 s.gyro_z_dps,
+
+                                 // ACC
+                                 s.acc_x_g,
+                                 s.acc_y_g,
+                                 s.acc_z_g,
+
+                                 (int)current_mode,
                                  (unsigned)motor_vals[0],
                                  (unsigned)motor_vals[1],
                                  (unsigned)motor_vals[2],
                                  (unsigned)motor_vals[3]);
 
-                if (n > 0 && n < sizeof(json))
+                if (n > 0 && n < (int)sizeof(json))
                 {
-                    int sent = sendto(sock, json, n, 0, (struct sockaddr *)&to, sizeof(to));
+                    (void)sendto(sock, json, n, 0, (struct sockaddr *)&to, sizeof(to));
                 }
                 else
                 {
-                    ESP_LOGE("TEL_SEND", "❌ JSON too long: %d/%d", n, sizeof(json));
+                    ESP_LOGE("TEL_SEND", "❌ JSON too long: %d/%d", n, (int)sizeof(json));
                 }
             }
         }
